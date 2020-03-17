@@ -87,10 +87,10 @@ namespace CacheManager.Examples
                 .WithDictionaryHandle()
                 .WithExpiration(ExpirationMode.Sliding, TimeSpan.FromSeconds(10)));
 
-            cache.AddOrUpdate("myKey", "someregion", "value", _ => "new value");
-            cache.AddOrUpdate("myKey", "someregion", "value", _ => "new value");
+            cache.AddOrUpdateAsync("myKey", "someregion", "value", _ => "new value");
+            cache.AddOrUpdateAsync("myKey", "someregion", "value", _ => "new value");
             cache.Expire("myKey", "someregion", TimeSpan.FromMinutes(10));
-            var val = cache.Get("myKey", "someregion");
+            var val = cache.GetAsync("myKey", "someregion");
         }
 
 #if !NETCOREAPP
@@ -98,7 +98,7 @@ namespace CacheManager.Examples
         private static void AppConfigLoadInstalledCacheCfg()
         {
             var cache = CacheFactory.FromConfiguration<object>("myCache");
-            cache.Add("key", "value");
+            cache.AddAsync("key", "value");
         }
 
 #endif
@@ -110,9 +110,9 @@ namespace CacheManager.Examples
             cache.OnGet += (sender, args) => Console.WriteLine("Got " + args.Key);
             cache.OnRemove += (sender, args) => Console.WriteLine("Removed " + args.Key);
 
-            cache.Add("key", "value");
-            var val = cache.Get("key");
-            cache.Remove("key");
+            cache.AddAsync("key", "value");
+            var val = cache.GetAsync("key");
+            cache.RemoveAsync("key");
         }
 
 #if !NETCOREAPP
@@ -136,11 +136,11 @@ namespace CacheManager.Examples
                     .WithRedisCacheHandle("redis", true);
             });
 
-            cache.Add("test", 123456);
+            cache.AddAsync("test", 123456);
 
             cache.Update("test", p => p + 1);
 
-            var result = cache.Get("test");
+            var result = cache.GetAsync("test");
         }
 
 #endif
@@ -158,11 +158,11 @@ namespace CacheManager.Examples
                 });
 
             var cache = CacheFactory.FromConfiguration<string>(cfg);
-            cache.Add("key", "value");
+            cache.AddAsync("key", "value");
 
             // reusing the configuration and using the same cache for different types:
             var numbers = CacheFactory.FromConfiguration<int>(cfg);
-            numbers.Add("intKey", 2323);
+            numbers.AddAsync("intKey", 2323);
             numbers.Update("intKey", v => v + 1);
         }
 
@@ -177,7 +177,7 @@ namespace CacheManager.Examples
                         .WithExpiration(ExpirationMode.Sliding, TimeSpan.FromSeconds(10));
             });
 
-            cache.Add("key", "value");
+            cache.AddAsync("key", "value");
         }
 
         private static void UnityInjectionExample()
@@ -214,15 +214,15 @@ namespace CacheManager.Examples
 
             // testing if we create a singleton instance per type, every Resolve of the same type should return the same instance!
             var stringCacheB = container.Resolve<ICacheManager<string>>();
-            stringCache.Put("key", "something");
+            stringCache.PutAsync("key", "something");
 
             var intCache = container.Resolve<ICacheManager<int>>();
             var intCacheB = container.Resolve<ICacheManager<int>>();
-            intCache.Put("key", 22);
+            intCache.PutAsync("key", 22);
 
             var boolCache = container.Resolve<ICacheManager<bool>>();
             var boolCacheB = container.Resolve<ICacheManager<bool>>();
-            boolCache.Put("key", false);
+            boolCache.PutAsync("key", false);
 
             Console.WriteLine("Value type is: " + stringCache.GetType().GetGenericArguments()[0].Name + " test value: " + stringCacheB["key"]);
             Console.WriteLine("Value type is: " + intCache.GetType().GetGenericArguments()[0].Name + " test value: " + intCacheB["key"]);
@@ -240,13 +240,13 @@ namespace CacheManager.Examples
                 Console.WriteLine("Value not added?: {0}", newValue == null);
             }
 
-            cache.Add("test", "start");
+            cache.AddAsync("test", "start");
             Console.WriteLine("Initial value: {0}", cache["test"]);
 
             cache.AddOrUpdate("test", "adding again?", v => "updating and not adding");
             Console.WriteLine("After AddOrUpdate: {0}", cache["test"]);
 
-            cache.Remove("test");
+            cache.RemoveAsync("test");
             try
             {
                 var removeValue = cache.Update("test", v => "updated?");
@@ -271,14 +271,14 @@ namespace CacheManager.Examples
 
             cache.AddOrUpdate("counter", 0, v => v + 1);
 
-            Console.WriteLine("Initial value: {0}", cache.Get("counter"));
+            Console.WriteLine("Initial value: {0}", cache.GetAsync("counter"));
 
             for (var i = 0; i < 12345; i++)
             {
                 cache.Update("counter", v => v + 1);
             }
 
-            Console.WriteLine("Final value: {0}", cache.Get("counter"));
+            Console.WriteLine("Final value: {0}", cache.GetAsync("counter"));
         }
 
         private static void MultiCacheEvictionWithoutRedisCacheHandle()
@@ -299,22 +299,22 @@ namespace CacheManager.Examples
 
             cacheA.OnRemove += (s, args) =>
             {
-                Console.WriteLine("A triggered remove: " + args.ToString() + " - key still exists? " + cacheA.Exists(key));
+                Console.WriteLine("A triggered remove: " + args.ToString() + " - key still exists? " + cacheA.ExistsAsync(key));
             };
             cacheB.OnRemove += (s, args) =>
             {
-                Console.WriteLine("B triggered remove: " + args.ToString() + " - key still exists? " + cacheB.Exists(key));
+                Console.WriteLine("B triggered remove: " + args.ToString() + " - key still exists? " + cacheB.ExistsAsync(key));
             };
 
             cacheA.OnRemoveByHandle += (s, args) =>
             {
-                cacheA.Remove(args.Key);
-                Console.WriteLine("A triggered removeByHandle: " + args.ToString() + " - key still exists? " + cacheA.Exists(key));
+                cacheA.RemoveAsync(args.Key);
+                Console.WriteLine("A triggered removeByHandle: " + args.ToString() + " - key still exists? " + cacheA.ExistsAsync(key));
             };
 
             cacheB.OnRemoveByHandle += (s, args) =>
             {
-                Console.WriteLine("B triggered removeByHandle: " + args.ToString() + " - key still exists? " + cacheA.Exists(key) + " in A? " + cacheA.Exists(key));
+                Console.WriteLine("B triggered removeByHandle: " + args.ToString() + " - key still exists? " + cacheA.ExistsAsync(key) + " in A? " + cacheA.ExistsAsync(key));
             };
 
             cacheA.OnAdd += (s, args) =>
@@ -327,11 +327,11 @@ namespace CacheManager.Examples
                 Console.WriteLine("B triggered add: " + args.ToString());
             };
 
-            Console.WriteLine("Add to A: " + cacheA.Add(key, "some value"));
-            Console.WriteLine("Add to B: " + cacheB.Add(key, "some value"));
+            Console.WriteLine("Add to A: " + cacheA.AddAsync(key, "some value"));
+            Console.WriteLine("Add to B: " + cacheB.AddAsync(key, "some value"));
 
             Thread.Sleep(2000);
-            cacheA.Remove(key);
+            cacheA.RemoveAsync(key);
         }
     }
 
@@ -346,7 +346,7 @@ namespace CacheManager.Examples
 
         public void GetSomething()
         {
-            var value = _cache.Get("myKey");
+            var value = _cache.GetAsync("myKey");
             var x = value;
             if (value == null)
             {
@@ -356,7 +356,7 @@ namespace CacheManager.Examples
 
         public void PutSomethingIntoTheCache()
         {
-            _cache.Put("myKey", "something");
+            _cache.PutAsync("myKey", "something");
         }
     }
 }

@@ -1,0 +1,18 @@
+﻿using System;
+using System.Diagnostics.CodeAnalysis;
+using System.Linq;
+using static CacheManager.Core.Utility.Guard;
+
+namespace CacheManager.RedisAsync.Tests
+{
+    [ExcludeFromCodeCoverage]
+    public static class TestConfigurationHelper
+    {
+        public static string GetCfgFileName(string fileName)
+        {
+            NotNullOrWhiteSpace(fileName, nameof(fileName));
+            var basePath = Environment.CurrentDirectory;
+            return basePath + (fileName.StartsWith("/") ? fileName : "/" + fileName);
+        }
+    }
+}

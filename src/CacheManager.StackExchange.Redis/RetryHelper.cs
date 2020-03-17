@@ -10,7 +10,7 @@ namespace CacheManager.Redis
         private const string ErrorMessage = "Maximum number of tries exceeded to perform the action: {0}.";
         private const string WarningMessage = "Exception occurred performing an action. Retrying... {0}/{1}";
 
-        public static T Retry<T>(Func<T> retryme, int timeOut, int retries, ILogger logger)
+        public static async Task<T> RetryAsync<T>(Func<Task<T>> retryme, int timeOut, int retries, ILogger logger)
         {
             var tries = 0;
             do
@@ -19,7 +19,7 @@ namespace CacheManager.Redis
 
                 try
                 {
-                    return retryme();
+                    return await retryme();
                 }
 
                 // might occur on lua script execution on a readonly slave because the master just died.
@@ -38,9 +38,9 @@ namespace CacheManager.Redis
 
                     logger.LogWarn(ex, WarningMessage, tries, retries);
 #if NET40
-                    TaskEx.Delay(timeOut).Wait();
+                    await TaskEx.Delay(timeOut);
 #else
-                    Task.Delay(timeOut).Wait();
+                    await Task.Delay(timeOut);
 #endif
                 }
                 catch (RedisConnectionException ex)
@@ -53,9 +53,9 @@ namespace CacheManager.Redis
 
                     logger.LogWarn(ex, WarningMessage, tries, retries);
 #if NET40
-                    TaskEx.Delay(timeOut).Wait();
+                    await TaskEx.Delay(timeOut);
 #else
-                    Task.Delay(timeOut).Wait();
+                    await Task.Delay(timeOut);
 #endif
                 }
                 catch (TimeoutException ex)
@@ -68,9 +68,9 @@ namespace CacheManager.Redis
 
                     logger.LogWarn(ex, WarningMessage, tries, retries);
 #if NET40
-                    TaskEx.Delay(timeOut).Wait();
+                    await TaskEx.Delay(timeOut);
 #else
-                    Task.Delay(timeOut).Wait();
+                    await Task.Delay(timeOut);
 #endif
                 }
                 catch (AggregateException aggregateException)
@@ -83,7 +83,7 @@ namespace CacheManager.Redis
 
                     aggregateException.Handle(e =>
                     {
-                        if(e is RedisServerException serverEx && serverEx.Message.Contains("unknown command"))
+                        if (e is RedisServerException serverEx && serverEx.Message.Contains("unknown command"))
                         {
                             return false;
                         }
@@ -110,12 +110,12 @@ namespace CacheManager.Redis
             return default(T);
         }
 
-        public static void Retry(Action retryme, int timeOut, int retries, ILogger logger)
+        public static  Task RetryAsync(Func<Task> retryme, int timeOut, int retries, ILogger logger)
         {
-            Retry(
-                () =>
+            return RetryAsync(
+                async () =>
                 {
-                    retryme();
+                    await retryme();
                     return true;
                 },
                 timeOut,

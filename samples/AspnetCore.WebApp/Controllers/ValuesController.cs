@@ -14,15 +14,15 @@ namespace AspnetCore.WebApp.Controllers
         {
             _cache = valuesCache;
 
-            dates.Add("now", DateTime.UtcNow);
-            intCache.Add("count", 1);
+            dates.AddAsync("now", DateTime.UtcNow);
+            intCache.AddAsync("count", 1);
         }
 
         // DELETE api/values/key
         [HttpDelete("{key}")]
         public IActionResult Delete(string key)
         {
-            if (_cache.Remove(key))
+            if (_cache.RemoveAsync(key))
             {
                 return Ok();
             }
@@ -34,7 +34,7 @@ namespace AspnetCore.WebApp.Controllers
         [HttpGet("{key}")]
         public IActionResult Get(string key)
         {
-            var value = _cache.GetCacheItem(key);
+            var value = _cache.GetCacheItemAsync(key);
             if (value == null)
             {
                 return NotFound();
@@ -47,7 +47,7 @@ namespace AspnetCore.WebApp.Controllers
         [HttpPost("{key}")]
         public IActionResult Post(string key, [FromBody]string value)
         {
-            if (_cache.Add(key, value))
+            if (_cache.AddAsync(key, value))
             {
                 return Ok();
             }

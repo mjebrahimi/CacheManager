@@ -13,7 +13,7 @@ namespace CacheManager.Core
     public enum CacheUpdateMode
     {
         /// <summary>
-        /// Instructs the cache manager not to synchronize cache items with other cache handles (on <see cref="ICache{TCacheValue}.Get(string)"/> for example).
+        /// Instructs the cache manager not to synchronize cache items with other cache handles (on <see cref="ICache{TCacheValue}.GetAsync(string)"/> for example).
         /// </summary>
         None,
 

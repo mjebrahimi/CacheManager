@@ -444,7 +444,7 @@ namespace CacheManager.Core.Internal
             {
                 var len = _encoding.GetByteCount(value);
                 WriteInt(len);
-
+                
                 _encoding.GetBytes(value, 0, value.Length, _buffer, _position);
                 _position += len;
             }

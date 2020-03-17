@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Linq;
+using System.Threading.Tasks;
 using CacheManager.Core.Internal;
 using CacheManager.Core.Logging;
 using static CacheManager.Core.Utility.Guard;
@@ -9,36 +10,36 @@ namespace CacheManager.Core
     public partial class BaseCacheManager<TCacheValue>
     {
         /// <inheritdoc />
-        public TCacheValue AddOrUpdate(string key, TCacheValue addValue, Func<TCacheValue, TCacheValue> updateValue) =>
-            AddOrUpdate(key, addValue, updateValue, Configuration.MaxRetries);
+        public Task<TCacheValue> AddOrUpdateAsync(string key, TCacheValue addValue, Func<TCacheValue, Task<TCacheValue>> updateValue) =>
+            AddOrUpdateAsync(key, addValue, updateValue, Configuration.MaxRetries);
 
         /// <inheritdoc />
-        public TCacheValue AddOrUpdate(string key, string region, TCacheValue addValue, Func<TCacheValue, TCacheValue> updateValue) =>
-            AddOrUpdate(key, region, addValue, updateValue, Configuration.MaxRetries);
+        public Task<TCacheValue> AddOrUpdateAsync(string key, string region, TCacheValue addValue, Func<TCacheValue, Task<TCacheValue>> updateValue) =>
+            AddOrUpdateAsync(key, region, addValue, updateValue, Configuration.MaxRetries);
 
         /// <inheritdoc />
-        public TCacheValue AddOrUpdate(string key, TCacheValue addValue, Func<TCacheValue, TCacheValue> updateValue, int maxRetries) =>
-            AddOrUpdate(new CacheItem<TCacheValue>(key, addValue), updateValue, maxRetries);
+        public Task<TCacheValue> AddOrUpdateAsync(string key, TCacheValue addValue, Func<TCacheValue, Task<TCacheValue>> updateValue, int maxRetries) =>
+            AddOrUpdateAsync(new CacheItem<TCacheValue>(key, addValue), updateValue, maxRetries);
 
         /// <inheritdoc />
-        public TCacheValue AddOrUpdate(string key, string region, TCacheValue addValue, Func<TCacheValue, TCacheValue> updateValue, int maxRetries) =>
-            AddOrUpdate(new CacheItem<TCacheValue>(key, region, addValue), updateValue, maxRetries);
+        public Task<TCacheValue> AddOrUpdateAsync(string key, string region, TCacheValue addValue, Func<TCacheValue, Task<TCacheValue>> updateValue, int maxRetries) =>
+            AddOrUpdateAsync(new CacheItem<TCacheValue>(key, region, addValue), updateValue, maxRetries);
 
         /// <inheritdoc />
-        public TCacheValue AddOrUpdate(CacheItem<TCacheValue> addItem, Func<TCacheValue, TCacheValue> updateValue) =>
-            AddOrUpdate(addItem, updateValue, Configuration.MaxRetries);
+        public Task<TCacheValue> AddOrUpdateAsync(CacheItem<TCacheValue> addItem, Func<TCacheValue, Task<TCacheValue>> updateValue) =>
+            AddOrUpdateAsync(addItem, updateValue, Configuration.MaxRetries);
 
         /// <inheritdoc />
-        public TCacheValue AddOrUpdate(CacheItem<TCacheValue> addItem, Func<TCacheValue, TCacheValue> updateValue, int maxRetries)
+        public Task<TCacheValue> AddOrUpdateAsync(CacheItem<TCacheValue> addItem, Func<TCacheValue, Task<TCacheValue>> updateValue, int maxRetries)
         {
             NotNull(addItem, nameof(addItem));
             NotNull(updateValue, nameof(updateValue));
             Ensure(maxRetries >= 0, "Maximum number of retries must be greater than or equal to zero.");
 
-            return AddOrUpdateInternal(addItem, updateValue, maxRetries);
+            return AddOrUpdateInternalAsync(addItem, updateValue, maxRetries);
         }
 
-        private TCacheValue AddOrUpdateInternal(CacheItem<TCacheValue> item, Func<TCacheValue, TCacheValue> updateValue, int maxRetries)
+        private async Task<TCacheValue> AddOrUpdateInternalAsync(CacheItem<TCacheValue> item, Func<TCacheValue, Task<TCacheValue>> updateValue, int maxRetries)
         {
             CheckDisposed();
             if (_logTrace)
@@ -51,7 +52,7 @@ namespace CacheManager.Core
             {
                 tries++;
 
-                if (AddInternal(item))
+                if (await AddInternalAsync(item))
                 {
                     if (_logTrace)
                     {
@@ -71,8 +72,8 @@ namespace CacheManager.Core
 
                 TCacheValue returnValue;
                 var updated = string.IsNullOrWhiteSpace(item.Region) ?
-                    TryUpdate(item.Key, updateValue, maxRetries, out returnValue) :
-                    TryUpdate(item.Key, item.Region, updateValue, maxRetries, out returnValue);
+                    await TryUpdateAsync(item.Key, updateValue, maxRetries, out returnValue) :
+                    await TryUpdateAsync(item.Key, item.Region, updateValue, maxRetries, out returnValue);
 
                 if (updated)
                 {
@@ -101,195 +102,204 @@ namespace CacheManager.Core
         }
 
         /// <inheritdoc />
-        public bool TryUpdate(string key, Func<TCacheValue, TCacheValue> updateValue, out TCacheValue value) =>
-            TryUpdate(key, updateValue, Configuration.MaxRetries, out value);
+        public Task<bool> TryUpdateAsync(string key, Func<TCacheValue, Task<TCacheValue>> updateValue, out TCacheValue value) =>
+            TryUpdateAsync(key, updateValue, Configuration.MaxRetries, out value);
 
         /// <inheritdoc />
-        public bool TryUpdate(string key, string region, Func<TCacheValue, TCacheValue> updateValue, out TCacheValue value) =>
-            TryUpdate(key, region, updateValue, Configuration.MaxRetries, out value);
+        public Task<bool> TryUpdateAsync(string key, string region, Func<TCacheValue, Task<TCacheValue>> updateValue, out TCacheValue value) =>
+            TryUpdateAsync(key, region, updateValue, Configuration.MaxRetries, out value);
 
         /// <inheritdoc />
-        public bool TryUpdate(string key, Func<TCacheValue, TCacheValue> updateValue, int maxRetries, out TCacheValue value)
+        public Task<bool> TryUpdateAsync(string key, Func<TCacheValue, Task<TCacheValue>> updateValue, int maxRetries, out TCacheValue value)
         {
             NotNullOrWhiteSpace(key, nameof(key));
             NotNull(updateValue, nameof(updateValue));
             Ensure(maxRetries >= 0, "Maximum number of retries must be greater than or equal to zero.");
 
-            return UpdateInternal(_cacheHandles, key, updateValue, maxRetries, false, out value);
+            return UpdateInternalAsync(_cacheHandles, key, updateValue, maxRetries, false, out value);
         }
 
         /// <inheritdoc />
-        public bool TryUpdate(string key, string region, Func<TCacheValue, TCacheValue> updateValue, int maxRetries, out TCacheValue value)
-        {
-            NotNullOrWhiteSpace(key, nameof(key));
-            NotNullOrWhiteSpace(region, nameof(region));
-            NotNull(updateValue, nameof(updateValue));
-            Ensure(maxRetries >= 0, "Maximum number of retries must be greater than or equal to zero.");
-
-            return UpdateInternal(_cacheHandles, key, region, updateValue, maxRetries, false, out value);
-        }
-
-        /// <inheritdoc />
-        public TCacheValue Update(string key, Func<TCacheValue, TCacheValue> updateValue) =>
-            Update(key, updateValue, Configuration.MaxRetries);
-
-        /// <inheritdoc />
-        public TCacheValue Update(string key, string region, Func<TCacheValue, TCacheValue> updateValue) =>
-            Update(key, region, updateValue, Configuration.MaxRetries);
-
-        /// <inheritdoc />
-        public TCacheValue Update(string key, Func<TCacheValue, TCacheValue> updateValue, int maxRetries)
-        {
-            NotNullOrWhiteSpace(key, nameof(key));
-            NotNull(updateValue, nameof(updateValue));
-            Ensure(maxRetries >= 0, "Maximum number of retries must be greater than or equal to zero.");
-
-            var value = default(TCacheValue);
-            UpdateInternal(_cacheHandles, key, updateValue, maxRetries, true, out value);
-
-            return value;
-        }
-
-        /// <inheritdoc />
-        public TCacheValue Update(string key, string region, Func<TCacheValue, TCacheValue> updateValue, int maxRetries)
+        public Task<bool> TryUpdateAsync(string key, string region, Func<TCacheValue, Task<TCacheValue>> updateValue, int maxRetries, out TCacheValue value)
         {
             NotNullOrWhiteSpace(key, nameof(key));
             NotNullOrWhiteSpace(region, nameof(region));
             NotNull(updateValue, nameof(updateValue));
             Ensure(maxRetries >= 0, "Maximum number of retries must be greater than or equal to zero.");
 
+            return UpdateInternalAsync(_cacheHandles, key, region, updateValue, maxRetries, false, out value);
+        }
+
+        /// <inheritdoc />
+        public Task<TCacheValue> UpdateAsync(string key, Func<TCacheValue, Task<TCacheValue>> updateValue) =>
+            UpdateAsync(key, updateValue, Configuration.MaxRetries);
+
+        /// <inheritdoc />
+        public Task<TCacheValue> UpdateAsync(string key, string region, Func<TCacheValue, Task<TCacheValue>> updateValue) =>
+            UpdateAsync(key, region, updateValue, Configuration.MaxRetries);
+
+        /// <inheritdoc />
+        public async Task<TCacheValue> UpdateAsync(string key, Func<TCacheValue, Task<TCacheValue>> updateValue, int maxRetries)
+        {
+            NotNullOrWhiteSpace(key, nameof(key));
+            NotNull(updateValue, nameof(updateValue));
+            Ensure(maxRetries >= 0, "Maximum number of retries must be greater than or equal to zero.");
+
             var value = default(TCacheValue);
-            UpdateInternal(_cacheHandles, key, region, updateValue, maxRetries, true, out value);
+            await UpdateInternalAsync(_cacheHandles, key, updateValue, maxRetries, true, out value);
 
             return value;
         }
 
-        private bool UpdateInternal(
+        /// <inheritdoc />
+        public async Task<TCacheValue> UpdateAsync(string key, string region, Func<TCacheValue, Task<TCacheValue>> updateValue, int maxRetries)
+        {
+            NotNullOrWhiteSpace(key, nameof(key));
+            NotNullOrWhiteSpace(region, nameof(region));
+            NotNull(updateValue, nameof(updateValue));
+            Ensure(maxRetries >= 0, "Maximum number of retries must be greater than or equal to zero.");
+
+            var value = default(TCacheValue);
+            await UpdateInternalAsync(_cacheHandles, key, region, updateValue, maxRetries, true, out value);
+
+            return value;
+        }
+
+        private Task<bool> UpdateInternalAsync(
             BaseCacheHandle<TCacheValue>[] handles,
             string key,
-            Func<TCacheValue, TCacheValue> updateValue,
+            Func<TCacheValue, Task<TCacheValue>> updateValue,
             int maxRetries,
             bool throwOnFailure,
             out TCacheValue value) =>
-            UpdateInternal(handles, key, null, updateValue, maxRetries, throwOnFailure, out value);
+            UpdateInternalAsync(handles, key, null, updateValue, maxRetries, throwOnFailure, out value);
 
-        private bool UpdateInternal(
+        private Task<bool> UpdateInternalAsync(
             BaseCacheHandle<TCacheValue>[] handles,
             string key,
             string region,
-            Func<TCacheValue, TCacheValue> updateValue,
+            Func<TCacheValue, Task<TCacheValue>> updateValue,
             int maxRetries,
             bool throwOnFailure,
             out TCacheValue value)
         {
             CheckDisposed();
 
-            // assign null
-            value = default(TCacheValue);
-
-            if (handles.Length == 0)
+            async Task<Tuple<bool, TCacheValue>> LocalFunc()
             {
-                return false;
-            }
+                // assign null
+                TCacheValue outValue = default(TCacheValue);
 
-            if (_logTrace)
-            {
-                Logger.LogTrace("Update: {0} {1}.", key, region);
-            }
-
-            // lowest level
-            // todo: maybe check for only run on the backplate if configured (could potentially be not the last one).
-            var handleIndex = handles.Length - 1;
-            var handle = handles[handleIndex];
-
-            var result = string.IsNullOrWhiteSpace(region) ?
-                handle.Update(key, updateValue, maxRetries) :
-                handle.Update(key, region, updateValue, maxRetries);
-
-            if (_logTrace)
-            {
-                Logger.LogTrace(
-                    "Update: {0} {1}: tried on handle {2}: result: {3}.",
-                    key,
-                    region,
-                    handle.Configuration.Name,
-                    result.UpdateState);
-            }
-
-            if (result.UpdateState == UpdateItemResultState.Success)
-            {
-                // only on success, the returned value will not be null
-                value = result.Value.Value;
-                handle.Stats.OnUpdate(key, region, result);
-
-                // evict others, we don't know if the update on other handles could actually
-                // succeed... There is a risk the update on other handles could create a
-                // different version than we created with the first successful update... we can
-                // safely add the item to handles below us though.
-                EvictFromHandlesAbove(key, region, handleIndex);
-
-                // optimizing - not getting the item again from cache. We already have it
-                // var item = string.IsNullOrWhiteSpace(region) ? handle.GetCacheItem(key) : handle.GetCacheItem(key, region);
-                AddToHandlesBelow(result.Value, handleIndex);
-                TriggerOnUpdate(key, region);
-            }
-            else if (result.UpdateState == UpdateItemResultState.FactoryReturnedNull)
-            {
-                Logger.LogWarn($"Update failed on '{region}:{key}' because value factory returned null.");
-
-                if (throwOnFailure)
+                if (handles.Length == 0)
                 {
-                    throw new InvalidOperationException($"Update failed on '{region}:{key}' because value factory returned null.");
+                    return Tuple.Create(false, outValue);
                 }
-            }
-            else if (result.UpdateState == UpdateItemResultState.TooManyRetries)
-            {
-                // if we had too many retries, this basically indicates an
-                // invalid state of the cache: The item is there, but we couldn't update it and
-                // it most likely has a different version
-                Logger.LogWarn($"Update failed on '{region}:{key}' because of too many retries.");
 
-                EvictFromOtherHandles(key, region, handleIndex);
-
-                if (throwOnFailure)
-                {
-                    throw new InvalidOperationException($"Update failed on '{region}:{key}' because of too many retries: {result.NumberOfTriesNeeded}.");
-                }
-            }
-            else if (result.UpdateState == UpdateItemResultState.ItemDidNotExist)
-            {
-                // If update fails because item doesn't exist AND the current handle is backplane source or the lowest cache handle level,
-                // remove the item from other handles (if exists).
-                // Otherwise, if we do not exit here, calling update on the next handle might succeed and would return a misleading result.
-                Logger.LogInfo($"Update failed on '{region}:{key}' because the region/key did not exist.");
-
-                EvictFromOtherHandles(key, region, handleIndex);
-
-                if (throwOnFailure)
-                {
-                    throw new InvalidOperationException($"Update failed on '{region}:{key}' because the region/key did not exist.");
-                }
-            }
-
-            // update backplane
-            if (result.UpdateState == UpdateItemResultState.Success && _cacheBackplane != null)
-            {
                 if (_logTrace)
                 {
-                    Logger.LogTrace("Update: {0} {1}: notifies backplane [change].", key, region);
+                    Logger.LogTrace("Update: {0} {1}.", key, region);
                 }
 
-                if (string.IsNullOrWhiteSpace(region))
+                // lowest level
+                // todo: maybe check for only run on the backplate if configured (could potentially be not the last one).
+                var handleIndex = handles.Length - 1;
+                var handle = handles[handleIndex];
+
+                var result = string.IsNullOrWhiteSpace(region) ?
+                    await handle.UpdateAsync(key, updateValue, maxRetries) :
+                    await handle.UpdateAsync(key, region, updateValue, maxRetries);
+
+                if (_logTrace)
                 {
-                    _cacheBackplane.NotifyChange(key, CacheItemChangedEventAction.Update);
+                    Logger.LogTrace(
+                        "Update: {0} {1}: tried on handle {2}: result: {3}.",
+                        key,
+                        region,
+                        handle.Configuration.Name,
+                        result.UpdateState);
                 }
-                else
+
+                if (result.UpdateState == UpdateItemResultState.Success)
                 {
-                    _cacheBackplane.NotifyChange(key, region, CacheItemChangedEventAction.Update);
+                    // only on success, the returned value will not be null
+                    outValue = result.Value.Value;
+                    handle.Stats.OnUpdate(key, region, result);
+
+                    // evict others, we don't know if the update on other handles could actually
+                    // succeed... There is a risk the update on other handles could create a
+                    // different version than we created with the first successful update... we can
+                    // safely add the item to handles below us though.
+                    await EvictFromHandlesAboveAsync(key, region, handleIndex);
+
+                    // optimizing - not getting the item again from cache. We already have it
+                    // var item = string.IsNullOrWhiteSpace(region) ? handle.GetCacheItem(key) : handle.GetCacheItem(key, region);
+                    await AddToHandlesBelowAsync(result.Value, handleIndex);
+                    TriggerOnUpdate(key, region);
                 }
+                else if (result.UpdateState == UpdateItemResultState.FactoryReturnedNull)
+                {
+                    Logger.LogWarn($"Update failed on '{region}:{key}' because value factory returned null.");
+
+                    if (throwOnFailure)
+                    {
+                        throw new InvalidOperationException($"Update failed on '{region}:{key}' because value factory returned null.");
+                    }
+                }
+                else if (result.UpdateState == UpdateItemResultState.TooManyRetries)
+                {
+                    // if we had too many retries, this basically indicates an
+                    // invalid state of the cache: The item is there, but we couldn't update it and
+                    // it most likely has a different version
+                    Logger.LogWarn($"Update failed on '{region}:{key}' because of too many retries.");
+
+                    await EvictFromOtherHandlesAsync(key, region, handleIndex);
+
+                    if (throwOnFailure)
+                    {
+                        throw new InvalidOperationException($"Update failed on '{region}:{key}' because of too many retries: {result.NumberOfTriesNeeded}.");
+                    }
+                }
+                else if (result.UpdateState == UpdateItemResultState.ItemDidNotExist)
+                {
+                    // If update fails because item doesn't exist AND the current handle is backplane source or the lowest cache handle level,
+                    // remove the item from other handles (if exists).
+                    // Otherwise, if we do not exit here, calling update on the next handle might succeed and would return a misleading result.
+                    Logger.LogInfo($"Update failed on '{region}:{key}' because the region/key did not exist.");
+
+                    await EvictFromOtherHandlesAsync(key, region, handleIndex);
+
+                    if (throwOnFailure)
+                    {
+                        throw new InvalidOperationException($"Update failed on '{region}:{key}' because the region/key did not exist.");
+                    }
+                }
+
+                // update backplane
+                if (result.UpdateState == UpdateItemResultState.Success && _cacheBackplane != null)
+                {
+                    if (_logTrace)
+                    {
+                        Logger.LogTrace("Update: {0} {1}: notifies backplane [change].", key, region);
+                    }
+
+                    if (string.IsNullOrWhiteSpace(region))
+                    {
+                        _cacheBackplane.NotifyChange(key, CacheItemChangedEventAction.Update);
+                    }
+                    else
+                    {
+                        _cacheBackplane.NotifyChange(key, region, CacheItemChangedEventAction.Update);
+                    }
+                }
+
+                return Tuple.Create(result.UpdateState == UpdateItemResultState.Success, outValue);
             }
 
-            return result.UpdateState == UpdateItemResultState.Success;
+            var task = Task.Run(LocalFunc);
+            var tuple = task.GetAwaiter().GetResult();
+
+            value = tuple.Item2;
+            return Task.FromResult(tuple.Item1);
         }
     }
 }

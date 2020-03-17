@@ -13,7 +13,7 @@ namespace CacheManager.Config.Tests
     {
         public static void CacheThreadTest(ICacheManager<string> cache, int seed = 42)
         {
-            cache.Clear();
+            cache.ClearAsync();
 
             var threads = 10;
             var numItems = 1000;
@@ -38,13 +38,13 @@ namespace CacheManager.Config.Tests
                 {
                     if (i % 10 == 0)
                     {
-                        cache.Remove(keyGet(i));
+                        cache.RemoveAsync(keyGet(i));
                     }
                 }
 
                 for (var i = 0; i < numItems; i++)
                 {
-                    var val = cache.Get(keyGet(i));
+                    var val = cache.GetAsync(keyGet(i));
                 }
             };
 
@@ -92,14 +92,14 @@ namespace CacheManager.Config.Tests
                         try
                         {
                             count++;
-                            cache.Put("key" + count, Guid.NewGuid().ToString());
+                            cache.PutAsync("key" + count, Guid.NewGuid().ToString());
 
                             Interlocked.Increment(ref puts);
 
                             if (count == maxItems)
                             {
                                 count = 0;
-                                cache.Clear();
+                                cache.ClearAsync();
                                 Interlocked.Increment(ref putIterations);
                             }
                         }
@@ -142,7 +142,7 @@ namespace CacheManager.Config.Tests
                 {
                     try
                     {
-                        var value = cache.Get("key" + rnd.Next(0, maxItems));
+                        var value = cache.GetAsync("key" + rnd.Next(0, maxItems));
                         if (value == null)
                         {
                             Interlocked.Increment(ref misses);
@@ -180,7 +180,7 @@ namespace CacheManager.Config.Tests
                 for (var ta = 0; ta < items; ta++)
                 {
                     Interlocked.Increment(ref ops);
-                    cache.Put(key + ta, "val" + ta, region);
+                    cache.PutAsync(key + ta, "val" + ta, region);
                     if (ta % 1000 == 0)
                     {
                         Console.Write(".");
@@ -195,7 +195,7 @@ namespace CacheManager.Config.Tests
                         for (var ta = 0; ta < items; ta++)
                         {
                             Interlocked.Increment(ref ops);
-                            var x = cache.Get(key + ta, region);
+                            var x = cache.GetAsync(key + ta, region);
 
                             if (x == null)
                             {
@@ -243,7 +243,7 @@ namespace CacheManager.Config.Tests
                     Interlocked.Increment(ref ops);
                     Interlocked.Increment(ref ops);
 
-                    var added = cache.AddOrUpdate(key + ta, region, "val" + ta, _ => "updated" + ta);
+                    var added = cache.AddOrUpdateAsync(key + ta, region, "val" + ta, _ => "updated" + ta);
                     if (added == null)
                     {
                         throw new InvalidOperationException("AddOrUpdate shouldn't return null");
@@ -263,7 +263,7 @@ namespace CacheManager.Config.Tests
                         for (var ta = 0; ta < items; ta++)
                         {
                             Interlocked.Increment(ref ops);
-                            var x = cache.Get(key + ta, region);
+                            var x = cache.GetAsync(key + ta, region);
 
                             if (x == null)
                             {
@@ -309,7 +309,7 @@ namespace CacheManager.Config.Tests
                 {
                     Interlocked.Increment(ref ops);
 
-                    cache.Add(key + ta, "val" + ta, region);
+                    cache.AddAsync(key + ta, "val" + ta, region);
 
                     if (ta % 1000 == 0)
                     {
@@ -325,7 +325,7 @@ namespace CacheManager.Config.Tests
                         for (var ta = 0; ta < items; ta++)
                         {
                             Interlocked.Increment(ref ops);
-                            var x = cache.Get(key + ta, region);
+                            var x = cache.GetAsync(key + ta, region);
 
                             if (x == null)
                             {
@@ -356,7 +356,7 @@ namespace CacheManager.Config.Tests
 
         public static void RandomRWTest(ICacheManager<Item> cache)
         {
-            cache.Clear();
+            cache.ClearAsync();
 
             const string keyPrefix = "RWKey_";
             const int actionsPerIteration = 104;
@@ -389,7 +389,7 @@ namespace CacheManager.Config.Tests
             {
                 for (var i = 0; i < 100; i++)
                 {
-                    var val = cache.Get(keyPrefix + random.Next(1, keyIndex));
+                    var val = cache.GetAsync(keyPrefix + random.Next(1, keyIndex));
                 }
             };
 
@@ -403,7 +403,7 @@ namespace CacheManager.Config.Tests
                 {
                     tries++;
                     key = keyPrefix + random.Next(1, keyIndex);
-                    result = cache.Remove(key);
+                    result = cache.RemoveAsync(key);
                     if (!result)
                     {
                         Interlocked.Increment(ref removeFails);
@@ -420,7 +420,7 @@ namespace CacheManager.Config.Tests
                     Console.WriteLine(
                         "Index is at {0} Items in Cache: {1} failed removes {4} runs: {2} \t{3}",
                         keyIndex,
-                        cache.CacheHandles.First().Count,
+                        cache.CacheHandles.First().CountAsync,
                         iterations,
                         iterations * actionsPerIteration,
                         removeFails);
@@ -474,25 +474,25 @@ namespace CacheManager.Config.Tests
 
         public static void TestEachMethod(ICacheManager<object> cache)
         {
-            cache.Clear();
+            cache.ClearAsync();
 
-            cache.Add("key", "value", "region");
+            cache.AddAsync("key", "value", "region");
             cache.AddOrUpdate("key", "region", "value", _ => "update value", 22);
 
             cache.Expire("key", "region", TimeSpan.FromDays(1));
-            var val = cache.Get("key", "region");
-            var item = cache.GetCacheItem("key", "region");
-            cache.Put("key", "put value");
+            var val = cache.GetAsync("key", "region");
+            var item = cache.GetCacheItemAsync("key", "region");
+            cache.PutAsync("key", "put value");
             cache.RemoveExpiration("key");
 
             cache.TryUpdate("key", "region", _ => "update 2 value", out object update2);
 
             var update3 = cache.Update("key", "region", _ => "update 3 value");
 
-            cache.Remove("key", "region");
+            cache.RemoveAsync("key", "region");
 
-            cache.Clear();
-            cache.ClearRegion("region");
+            cache.ClearAsync();
+            cache.ClearRegionAsync("region");
         }
     }
 

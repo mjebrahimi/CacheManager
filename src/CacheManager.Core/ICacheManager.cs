@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using CacheManager.Core.Internal;
 
 namespace CacheManager.Core
@@ -110,7 +111,7 @@ namespace CacheManager.Core
         /// If the cache does not use a distributed cache system. Update is doing exactly the same
         /// as Get plus Put.
         /// </remarks>
-        TCacheValue AddOrUpdate(string key, TCacheValue addValue, Func<TCacheValue, TCacheValue> updateValue);
+        Task<TCacheValue> AddOrUpdateAsync(string key, TCacheValue addValue, Func<TCacheValue, Task<TCacheValue>> updateValue);
 
         /// <summary>
         /// Adds an item to the cache or, if the item already exists, updates the item using the
@@ -147,7 +148,7 @@ namespace CacheManager.Core
         /// If the cache does not use a distributed cache system. Update is doing exactly the same
         /// as Get plus Put.
         /// </remarks>
-        TCacheValue AddOrUpdate(string key, string region, TCacheValue addValue, Func<TCacheValue, TCacheValue> updateValue);
+        Task<TCacheValue> AddOrUpdateAsync(string key, string region, TCacheValue addValue, Func<TCacheValue, Task<TCacheValue>> updateValue);
 
         /// <summary>
         /// Adds an item to the cache or, if the item already exists, updates the item using the
@@ -187,7 +188,7 @@ namespace CacheManager.Core
         /// If the cache does not use a distributed cache system. Update is doing exactly the same
         /// as Get plus Put.
         /// </remarks>
-        TCacheValue AddOrUpdate(string key, TCacheValue addValue, Func<TCacheValue, TCacheValue> updateValue, int maxRetries);
+        Task<TCacheValue> AddOrUpdateAsync(string key, TCacheValue addValue, Func<TCacheValue, Task<TCacheValue>> updateValue, int maxRetries);
 
         /// <summary>
         /// Adds an item to the cache or, if the item already exists, updates the item using the
@@ -228,7 +229,7 @@ namespace CacheManager.Core
         /// If the cache does not use a distributed cache system. Update is doing exactly the same
         /// as Get plus Put.
         /// </remarks>
-        TCacheValue AddOrUpdate(string key, string region, TCacheValue addValue, Func<TCacheValue, TCacheValue> updateValue, int maxRetries);
+        Task<TCacheValue> AddOrUpdateAsync(string key, string region, TCacheValue addValue, Func<TCacheValue, Task<TCacheValue>> updateValue, int maxRetries);
 
         /// <summary>
         /// Adds an item to the cache or, if the item already exists, updates the item using the
@@ -254,7 +255,7 @@ namespace CacheManager.Core
         /// <exception cref="System.ArgumentNullException">
         /// If <paramref name="addItem"/> or <paramref name="updateValue"/> are null.
         /// </exception>
-        TCacheValue AddOrUpdate(CacheItem<TCacheValue> addItem, Func<TCacheValue, TCacheValue> updateValue);
+        Task<TCacheValue> AddOrUpdateAsync(CacheItem<TCacheValue> addItem, Func<TCacheValue, Task<TCacheValue>> updateValue);
 
         /// <summary>
         /// Adds an item to the cache or, if the item already exists, updates the item using the
@@ -285,7 +286,7 @@ namespace CacheManager.Core
         /// <exception cref="System.ArgumentNullException">
         /// If <paramref name="addItem"/> or <paramref name="updateValue"/> is null.
         /// </exception>
-        TCacheValue AddOrUpdate(CacheItem<TCacheValue> addItem, Func<TCacheValue, TCacheValue> updateValue, int maxRetries);
+        Task<TCacheValue> AddOrUpdateAsync(CacheItem<TCacheValue> addItem, Func<TCacheValue, Task<TCacheValue>> updateValue, int maxRetries);
 
         /// <summary>
         /// Returns an existing item or adds the item to the cache if it does not exist.
@@ -297,7 +298,7 @@ namespace CacheManager.Core
         /// <exception cref="ArgumentException">
         /// If either <paramref name="key"/> or <paramref name="value"/> is null.
         /// </exception>
-        TCacheValue GetOrAdd(string key, TCacheValue value);
+        Task<TCacheValue> GetOrAddAsync(string key, TCacheValue value);
 
         /// <summary>
         /// Returns an existing item or adds the item to the cache if it does not exist.
@@ -310,7 +311,7 @@ namespace CacheManager.Core
         /// <exception cref="ArgumentException">
         /// If either <paramref name="key"/>, <paramref name="region"/> or <paramref name="value"/> is null.
         /// </exception>
-        TCacheValue GetOrAdd(string key, string region, TCacheValue value);
+        Task<TCacheValue> GetOrAddAsync(string key, string region, TCacheValue value);
 
         /// <summary>
         /// Returns an existing item or adds the item to the cache if it does not exist.
@@ -322,32 +323,7 @@ namespace CacheManager.Core
         /// <exception cref="ArgumentException">
         /// If either <paramref name="key"/> or <paramref name="valueFactory"/> is null.
         /// </exception>
-        TCacheValue GetOrAdd(string key, Func<string, TCacheValue> valueFactory);
-
-        /// <summary>
-        /// Returns an existing item or adds the item to the cache if it does not exist.
-        /// The <paramref name="valueFactory"/> will be evaluated only if the item does not exist.
-        /// </summary>
-        /// <param name="key">The cache key.</param>
-        /// <param name="region">The cache region.</param>
-        /// <param name="valueFactory">The method which creates the value which should be added.</param>
-        /// <returns>Either the added or the existing value.</returns>
-        /// <exception cref="ArgumentException">
-        /// If either <paramref name="key"/> or <paramref name="valueFactory"/> is null.
-        /// </exception>
-        TCacheValue GetOrAdd(string key, string region, Func<string, string, TCacheValue> valueFactory);
-
-        /// <summary>
-        /// Returns an existing item or adds the item to the cache if it does not exist.
-        /// The <paramref name="valueFactory"/> will be evaluated only if the item does not exist.
-        /// </summary>
-        /// <param name="key">The cache key.</param>
-        /// <param name="valueFactory">The method which creates the value which should be added.</param>
-        /// <returns>Either the added or the existing value.</returns>
-        /// <exception cref="ArgumentException">
-        /// If either <paramref name="key"/> or <paramref name="valueFactory"/> is null.
-        /// </exception>
-        CacheItem<TCacheValue> GetOrAdd(string key, Func<string, CacheItem<TCacheValue>> valueFactory);
+        Task<TCacheValue> GetOrAddAsync(string key, Func<string, Task<TCacheValue>> valueFactory);
 
         /// <summary>
         /// Returns an existing item or adds the item to the cache if it does not exist.
@@ -360,7 +336,32 @@ namespace CacheManager.Core
         /// <exception cref="ArgumentException">
         /// If either <paramref name="key"/> or <paramref name="valueFactory"/> is null.
         /// </exception>
-        CacheItem<TCacheValue> GetOrAdd(string key, string region, Func<string, string, CacheItem<TCacheValue>> valueFactory);
+        Task<TCacheValue> GetOrAddAsync(string key, string region, Func<string, string, Task<TCacheValue>> valueFactory);
+
+        /// <summary>
+        /// Returns an existing item or adds the item to the cache if it does not exist.
+        /// The <paramref name="valueFactory"/> will be evaluated only if the item does not exist.
+        /// </summary>
+        /// <param name="key">The cache key.</param>
+        /// <param name="valueFactory">The method which creates the value which should be added.</param>
+        /// <returns>Either the added or the existing value.</returns>
+        /// <exception cref="ArgumentException">
+        /// If either <paramref name="key"/> or <paramref name="valueFactory"/> is null.
+        /// </exception>
+        Task<CacheItem<TCacheValue>> GetOrAddAsync(string key, Func<string, Task<CacheItem<TCacheValue>>> valueFactory);
+
+        /// <summary>
+        /// Returns an existing item or adds the item to the cache if it does not exist.
+        /// The <paramref name="valueFactory"/> will be evaluated only if the item does not exist.
+        /// </summary>
+        /// <param name="key">The cache key.</param>
+        /// <param name="region">The cache region.</param>
+        /// <param name="valueFactory">The method which creates the value which should be added.</param>
+        /// <returns>Either the added or the existing value.</returns>
+        /// <exception cref="ArgumentException">
+        /// If either <paramref name="key"/> or <paramref name="valueFactory"/> is null.
+        /// </exception>
+        Task<CacheItem<TCacheValue>> GetOrAddAsync(string key, string region, Func<string, string, Task<CacheItem<TCacheValue>>> valueFactory);
 
         /// <summary>
         /// Tries to either retrieve an existing item or add the item to the cache if it does not exist.
@@ -373,7 +374,7 @@ namespace CacheManager.Core
         /// <exception cref="ArgumentException">
         /// If either <paramref name="key"/> or <paramref name="valueFactory"/> is null.
         /// </exception>
-        bool TryGetOrAdd(string key, Func<string, TCacheValue> valueFactory, out TCacheValue value);
+        Task<bool> TryGetOrAddAsync(string key, Func<string, Task<TCacheValue>> valueFactory, out TCacheValue value);
 
         /// <summary>
         /// Tries to either retrieve an existing item or add the item to the cache if it does not exist.
@@ -387,7 +388,7 @@ namespace CacheManager.Core
         /// <exception cref="ArgumentException">
         /// If either <paramref name="key"/> or <paramref name="valueFactory"/> is null.
         /// </exception>
-        bool TryGetOrAdd(string key, string region, Func<string, string, TCacheValue> valueFactory, out TCacheValue value);
+        Task<bool> TryGetOrAddAsync(string key, string region, Func<string, string, Task<TCacheValue>> valueFactory, out TCacheValue value);
 
         /// <summary>
         /// Tries to either retrieve an existing item or add the item to the cache if it does not exist.
@@ -399,7 +400,7 @@ namespace CacheManager.Core
         /// <exception cref="ArgumentException">
         /// If either <paramref name="key"/> or <paramref name="valueFactory"/> is null.
         /// </exception>
-        bool TryGetOrAdd(string key, Func<string, CacheItem<TCacheValue>> valueFactory, out CacheItem<TCacheValue> item);
+        Task<bool> TryGetOrAddAsync(string key, Func<string, Task<CacheItem<TCacheValue>>> valueFactory, out CacheItem<TCacheValue> item);
 
         /// <summary>
         /// Tries to either retrieve an existing item or add the item to the cache if it does not exist.
@@ -412,7 +413,7 @@ namespace CacheManager.Core
         /// <exception cref="ArgumentException">
         /// If either <paramref name="key"/> or <paramref name="valueFactory"/> is null.
         /// </exception>
-        bool TryGetOrAdd(string key, string region, Func<string, string, CacheItem<TCacheValue>> valueFactory, out CacheItem<TCacheValue> item);
+        Task<bool> TryGetOrAddAsync(string key, string region, Func<string, string, Task<CacheItem<TCacheValue>>> valueFactory, out CacheItem<TCacheValue> item);
 
         /// <summary>
         /// Updates an existing key in the cache.
@@ -439,7 +440,7 @@ namespace CacheManager.Core
         /// <exception cref="System.ArgumentNullException">
         /// If <paramref name="key"/> or <paramref name="updateValue"/> are null.
         /// </exception>
-        TCacheValue Update(string key, Func<TCacheValue, TCacheValue> updateValue);
+        Task<TCacheValue> UpdateAsync(string key, Func<TCacheValue, Task<TCacheValue>> updateValue);
 
         /// <summary>
         /// Updates an existing key in the cache.
@@ -468,7 +469,7 @@ namespace CacheManager.Core
         /// If <paramref name="key"/> or <paramref name="region"/> or <paramref name="updateValue"/>
         /// are null.
         /// </exception>
-        TCacheValue Update(string key, string region, Func<TCacheValue, TCacheValue> updateValue);
+        Task<TCacheValue> UpdateAsync(string key, string region, Func<TCacheValue, Task<TCacheValue>> updateValue);
 
         /// <summary>
         /// Updates an existing key in the cache.
@@ -500,7 +501,7 @@ namespace CacheManager.Core
         /// <exception cref="System.ArgumentNullException">
         /// If <paramref name="key"/> or <paramref name="updateValue"/> is null.
         /// </exception>
-        TCacheValue Update(string key, Func<TCacheValue, TCacheValue> updateValue, int maxRetries);
+        Task<TCacheValue> UpdateAsync(string key, Func<TCacheValue, Task<TCacheValue>> updateValue, int maxRetries);
 
         /// <summary>
         /// Updates an existing key in the cache.
@@ -533,7 +534,7 @@ namespace CacheManager.Core
         /// <exception cref="System.ArgumentNullException">
         /// If <paramref name="key"/> or <paramref name="region"/> or <paramref name="updateValue"/> is null.
         /// </exception>
-        TCacheValue Update(string key, string region, Func<TCacheValue, TCacheValue> updateValue, int maxRetries);
+        Task<TCacheValue> UpdateAsync(string key, string region, Func<TCacheValue, Task<TCacheValue>> updateValue, int maxRetries);
 
         /// <summary>
         /// Tries to update an existing key in the cache.
@@ -561,7 +562,7 @@ namespace CacheManager.Core
         /// If the cache does not use a distributed cache system. Update is doing exactly the same
         /// as Get plus Put.
         /// </remarks>
-        bool TryUpdate(string key, Func<TCacheValue, TCacheValue> updateValue, out TCacheValue value);
+        Task<bool> TryUpdateAsync(string key, Func<TCacheValue, Task<TCacheValue>> updateValue, out TCacheValue value);
 
         /// <summary>
         /// Tries to update an existing key in the cache.
@@ -591,7 +592,7 @@ namespace CacheManager.Core
         /// If the cache does not use a distributed cache system. Update is doing exactly the same
         /// as Get plus Put.
         /// </remarks>
-        bool TryUpdate(string key, string region, Func<TCacheValue, TCacheValue> updateValue, out TCacheValue value);
+        Task<bool> TryUpdateAsync(string key, string region, Func<TCacheValue, Task<TCacheValue>> updateValue, out TCacheValue value);
 
         /// <summary>
         /// Tries to update an existing key in the cache.
@@ -624,7 +625,7 @@ namespace CacheManager.Core
         /// If the cache does not use a distributed cache system. Update is doing exactly the same
         /// as Get plus Put.
         /// </remarks>
-        bool TryUpdate(string key, Func<TCacheValue, TCacheValue> updateValue, int maxRetries, out TCacheValue value);
+        Task<bool> TryUpdateAsync(string key, Func<TCacheValue, Task<TCacheValue>> updateValue, int maxRetries, out TCacheValue value);
 
         /// <summary>
         /// Tries to update an existing key in the cache.
@@ -658,7 +659,7 @@ namespace CacheManager.Core
         /// If the cache does not use a distributed cache system. Update is doing exactly the same
         /// as Get plus Put.
         /// </remarks>
-        bool TryUpdate(string key, string region, Func<TCacheValue, TCacheValue> updateValue, int maxRetries, out TCacheValue value);
+        Task<bool> TryUpdateAsync(string key, string region, Func<TCacheValue, Task<TCacheValue>> updateValue, int maxRetries, out TCacheValue value);
 
         /// <summary>
         /// Explicitly sets the expiration <paramref name="mode"/> and <paramref name="timeout"/> for the
@@ -667,12 +668,12 @@ namespace CacheManager.Core
         /// </summary>
         /// <remarks>
         /// Don't use this in concurrency critical scenarios if you are using distributed caches as <code>Expire</code> is not atomic;
-        /// <code>Expire</code> uses <see cref="ICache{TCacheValue}.Put(CacheItem{TCacheValue})"/> to store the item with the new expiration.
+        /// <code>Expire</code> uses <see cref="ICache{TCacheValue}.PutAsync(CacheItem{TCacheValue})"/> to store the item with the new expiration.
         /// </remarks>
         /// <param name="key">The cache key.</param>
         /// <param name="mode">The expiration mode.</param>
         /// <param name="timeout">The expiration timeout.</param>
-        void Expire(string key, ExpirationMode mode, TimeSpan timeout);
+        Task ExpireAsync(string key, ExpirationMode mode, TimeSpan timeout);
 
         /// <summary>
         /// Explicitly sets the expiration <paramref name="mode"/> and <paramref name="timeout"/> for the
@@ -681,13 +682,13 @@ namespace CacheManager.Core
         /// </summary>
         /// <remarks>
         /// Don't use this in concurrency critical scenarios if you are using distributed caches as <code>Expire</code> is not atomic;
-        /// <code>Expire</code> uses <see cref="ICache{TCacheValue}.Put(CacheItem{TCacheValue})"/> to store the item with the new expiration.
+        /// <code>Expire</code> uses <see cref="ICache{TCacheValue}.PutAsync(CacheItem{TCacheValue})"/> to store the item with the new expiration.
         /// </remarks>
         /// <param name="key">The cache key.</param>
         /// <param name="region">The cache region.</param>
         /// <param name="mode">The expiration mode.</param>
         /// <param name="timeout">The expiration timeout.</param>
-        void Expire(string key, string region, ExpirationMode mode, TimeSpan timeout);
+        Task ExpireAsync(string key, string region, ExpirationMode mode, TimeSpan timeout);
 
         /// <summary>
         /// Explicitly sets an absolute expiration date for the <paramref name="key"/> in all cache layers.
@@ -695,13 +696,13 @@ namespace CacheManager.Core
         /// </summary>
         /// <remarks>
         /// Don't use this in concurrency critical scenarios if you are using distributed caches as <code>Expire</code> is not atomic;
-        /// <code>Expire</code> uses <see cref="ICache{TCacheValue}.Put(CacheItem{TCacheValue})"/> to store the item with the new expiration.
+        /// <code>Expire</code> uses <see cref="ICache{TCacheValue}.PutAsync(CacheItem{TCacheValue})"/> to store the item with the new expiration.
         /// </remarks>
         /// <param name="key">The cache key.</param>
         /// <param name="absoluteExpiration">
         /// The expiration date. The value must be greater than zero.
         /// </param>
-        void Expire(string key, DateTimeOffset absoluteExpiration);
+        Task ExpireAsync(string key, DateTimeOffset absoluteExpiration);
 
         /// <summary>
         /// Explicitly sets an absolute expiration date for the <paramref name="key"/> in <paramref name="region"/> in all cache layers.
@@ -709,14 +710,14 @@ namespace CacheManager.Core
         /// </summary>
         /// <remarks>
         /// Don't use this in concurrency critical scenarios if you are using distributed caches as <code>Expire</code> is not atomic;
-        /// <code>Expire</code> uses <see cref="ICache{TCacheValue}.Put(CacheItem{TCacheValue})"/> to store the item with the new expiration.
+        /// <code>Expire</code> uses <see cref="ICache{TCacheValue}.PutAsync(CacheItem{TCacheValue})"/> to store the item with the new expiration.
         /// </remarks>
         /// <param name="key">The cache key.</param>
         /// <param name="region">The cache region.</param>
         /// <param name="absoluteExpiration">
         /// The expiration date. The value must be greater than zero.
         /// </param>
-        void Expire(string key, string region, DateTimeOffset absoluteExpiration);
+        Task ExpireAsync(string key, string region, DateTimeOffset absoluteExpiration);
 
         /// <summary>
         /// Explicitly sets a sliding expiration date for the <paramref name="key"/> in all cache layers.
@@ -724,13 +725,13 @@ namespace CacheManager.Core
         /// </summary>
         /// <remarks>
         /// Don't use this in concurrency critical scenarios if you are using distributed caches as <code>Expire</code> is not atomic;
-        /// <code>Expire</code> uses <see cref="ICache{TCacheValue}.Put(CacheItem{TCacheValue})"/> to store the item with the new expiration.
+        /// <code>Expire</code> uses <see cref="ICache{TCacheValue}.PutAsync(CacheItem{TCacheValue})"/> to store the item with the new expiration.
         /// </remarks>
         /// <param name="key">The cache key.</param>
         /// <param name="slidingExpiration">
         /// The expiration timeout. The value must be greater than zero.
         /// </param>
-        void Expire(string key, TimeSpan slidingExpiration);
+        Task ExpireAsync(string key, TimeSpan slidingExpiration);
 
         /// <summary>
         /// Explicitly sets a sliding expiration date for the <paramref name="key"/> in <paramref name="region"/> in all cache layers.
@@ -738,14 +739,14 @@ namespace CacheManager.Core
         /// </summary>
         /// <remarks>
         /// Don't use this in concurrency critical scenarios if you are using distributed caches as <code>Expire</code> is not atomic;
-        /// <code>Expire</code> uses <see cref="ICache{TCacheValue}.Put(CacheItem{TCacheValue})"/> to store the item with the new expiration.
+        /// <code>Expire</code> uses <see cref="ICache{TCacheValue}.PutAsync(CacheItem{TCacheValue})"/> to store the item with the new expiration.
         /// </remarks>
         /// <param name="key">The cache key.</param>
         /// <param name="region">The cache region.</param>
         /// <param name="slidingExpiration">
         /// The expiration timeout. The value must be greater than zero.
         /// </param>
-        void Expire(string key, string region, TimeSpan slidingExpiration);
+        Task ExpireAsync(string key, string region, TimeSpan slidingExpiration);
 
         /// <summary>
         /// Explicitly removes any expiration settings previously defined for the <paramref name="key"/>
@@ -754,10 +755,10 @@ namespace CacheManager.Core
         /// </summary>
         /// <remarks>
         /// Don't use this in concurrency critical scenarios if you are using distributed caches as <code>Expire</code> is not atomic;
-        /// <code>Expire</code> uses <see cref="ICache{TCacheValue}.Put(CacheItem{TCacheValue})"/> to store the item with the new expiration.
+        /// <code>Expire</code> uses <see cref="ICache{TCacheValue}.PutAsync(CacheItem{TCacheValue})"/> to store the item with the new expiration.
         /// </remarks>
         /// <param name="key">The cache key.</param>
-        void RemoveExpiration(string key);
+        Task RemoveExpirationAsync(string key);
 
         /// <summary>
         /// Explicitly removes any expiration settings previously defined for the <paramref name="key"/> in <paramref name="region"/>
@@ -766,10 +767,10 @@ namespace CacheManager.Core
         /// </summary>
         /// <remarks>
         /// Don't use this in concurrency critical scenarios if you are using distributed caches as <code>Expire</code> is not atomic;
-        /// <code>Expire</code> uses <see cref="ICache{TCacheValue}.Put(CacheItem{TCacheValue})"/> to store the item with the new expiration.
+        /// <code>Expire</code> uses <see cref="ICache{TCacheValue}.PutAsync(CacheItem{TCacheValue})"/> to store the item with the new expiration.
         /// </remarks>
         /// <param name="key">The cache key.</param>
         /// <param name="region">The cache region.</param>
-        void RemoveExpiration(string key, string region);
+        Task RemoveExpirationAsync(string key, string region);
     }
 }

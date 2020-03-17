@@ -2,9 +2,11 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading.Tasks;
 using CacheManager.Core;
 using CacheManager.Core.Internal;
 using CacheManager.Core.Logging;
+using CacheManager.Core.Utility;
 using StackExchange.Redis;
 using static CacheManager.Core.Utility.Guard;
 
@@ -84,7 +86,8 @@ return result";
         // flag if scripts are initially loaded to the server
         private bool _scriptsLoaded = false;
 
-        private object _lockObject = new object();
+        private AsyncLock _evalAsyncLock = new AsyncLock(); 
+        private AsyncLock _loadScriptsAsyncLock = new AsyncLock(); 
 
         /// <summary>
         /// Initializes a new instance of the <see cref="RedisCacheHandle{TCacheValue}"/> class.
@@ -106,7 +109,7 @@ return result";
             _valueConverter = new RedisValueConverter(serializer);
             _redisConfiguration = RedisConfigurations.GetConfiguration(configuration.Key);
             _connection = new RedisConnectionManager(_redisConfiguration, loggerFactory);
-            _isLuaAllowed = _connection.Features.Scripting;
+            _isLuaAllowed = _connection.FeaturesAsync().GetAwaiter().GetResult().Scripting;
 
             // disable preloading right away if twemproxy mode, as this is not supported.
             _canPreloadScripts = _redisConfiguration.TwemproxyEnabled ? false : true;
@@ -118,7 +121,7 @@ return result";
                 // Let's try to check at least if those settings are configured (the check also works only if useAdmin is set to true though).
                 try
                 {
-                    var configurations = _connection.GetConfiguration("notify-keyspace-events");
+                    var configurations = _connection.GetConfigurationAsync("notify-keyspace-events").GetAwaiter().GetResult();
                     foreach (var cfg in configurations)
                     {
                         if (!cfg.Value.Contains("E"))
@@ -138,7 +141,7 @@ return result";
                     Logger.LogDebug("Could not read configuration from redis to validate notify-keyspace-events. Most likely useAdmin is not set to true.");
                 }
 
-                SubscribeKeyspaceNotifications();
+                SubscribeKeyspaceNotificationsAsync().GetAwaiter().GetResult();
             }
         }
 
@@ -156,25 +159,22 @@ return result";
         /// </summary>
         /// <value>The count.</value>
         /// <exception cref="System.InvalidOperationException">No active master found.</exception>
-        public override int Count
+        public override async Task<int> CountAsync()
         {
-            get
+            if (_redisConfiguration.TwemproxyEnabled)
             {
-                if (_redisConfiguration.TwemproxyEnabled)
-                {
-                    Logger.LogWarn("'Count' cannot be calculated. Twemproxy mode is enabled which does not support accessing the servers collection.");
-                    return 0;
-                }
-
-                var count = 0;
-                foreach (var server in Servers.Where(p => !p.IsSlave && p.IsConnected))
-                {
-                    count += (int)server.DatabaseSize(_redisConfiguration.Database);
-                }
-
-                // approx size, only size on the master..
-                return count;
+                Logger.LogWarn("'Count' cannot be calculated. Twemproxy mode is enabled which does not support accessing the servers collection.");
+                return 0;
             }
+
+            var count = 0;
+            foreach (var server in (await ServersAsync()).Where(p => !p.IsSlave && p.IsConnected))
+            {
+                count += (int)await server.DatabaseSizeAsync(_redisConfiguration.Database);
+            }
+
+            // approx size, only size on the master..
+            return count;
         }
 
 #pragma warning disable CS3003 // Type is not CLS-compliant
@@ -183,13 +183,13 @@ return result";
         /// Gets the servers.
         /// </summary>
         /// <value>The list of servers.</value>
-        public IEnumerable<IServer> Servers => _connection.Servers;
+        public Task<IEnumerable<IServer>> ServersAsync() => _connection.ServersAsync();
 
         /// <summary>
         /// Gets the features the redis server supports.
         /// </summary>
         /// <value>The server features.</value>
-        public RedisFeatures Features => _connection.Features;
+        public Task<RedisFeatures> FeaturesAsync() => _connection.FeaturesAsync();
 
 #pragma warning restore CS3003 // Type is not CLS-compliant
 
@@ -206,17 +206,17 @@ return result";
         /// <summary>
         /// Clears this cache, removing all items in the base cache and all regions.
         /// </summary>
-        public override void Clear()
+        public override async Task ClearAsync()
         {
             try
             {
-                foreach (var server in Servers.Where(p => !p.IsSlave))
+                foreach (var server in (await ServersAsync()).Where(p => !p.IsSlave))
                 {
-                    Retry(() =>
+                    await RetryAsync(async () =>
                     {
                         if (server.IsConnected)
                         {
-                            server.FlushDatabase(_redisConfiguration.Database);
+                            await server.FlushDatabaseAsync(_redisConfiguration.Database);
                         }
                     });
                 }
@@ -231,12 +231,12 @@ return result";
         /// Clears the cache region, removing all items from the specified <paramref name="region"/> only.
         /// </summary>
         /// <param name="region">The cache region.</param>
-        public override void ClearRegion(string region)
+        public override Task ClearRegionAsync(string region)
         {
-            Retry(() =>
+            return RetryAsync(async () =>
             {
                 // we are storing all keys stored in the region in the hash for key=region
-                var hashKeys = _connection.Database.HashKeys(region);
+                var hashKeys = await (await _connection.DatabaseAsync()).HashKeysAsync(region);
 
                 if (hashKeys.Length > 0)
                 {
@@ -244,53 +244,53 @@ return result";
                     // 01/32/16 changed to remove one by one because on clusters the keys could belong to multiple slots
                     foreach (var key in hashKeys.Where(p => p.HasValue))
                     {
-                        _connection.Database.KeyDelete(key.ToString(), CommandFlags.FireAndForget);
+                        await (await _connection.DatabaseAsync()).KeyDeleteAsync(key.ToString(), CommandFlags.FireAndForget);
                     }
                 }
 
                 // now delete the region
-                _connection.Database.KeyDelete(region);
+                await (await _connection.DatabaseAsync()).KeyDeleteAsync(region);
             });
         }
 
         /// <inheritdoc />
-        public override bool Exists(string key)
+        public override Task<bool> ExistsAsync(string key)
         {
             var fullKey = GetKey(key);
-            return Retry(() => _connection.Database.KeyExists(fullKey));
+            return RetryAsync(async () => await (await _connection.DatabaseAsync()).KeyExistsAsync(fullKey));
         }
 
         /// <inheritdoc />
-        public override bool Exists(string key, string region)
+        public override Task<bool> ExistsAsync(string key, string region)
         {
             NotNullOrWhiteSpace(region, nameof(region));
 
             var fullKey = GetKey(key, region);
-            return Retry(() => _connection.Database.KeyExists(fullKey));
+            return RetryAsync(async () => await (await _connection.DatabaseAsync()).KeyExistsAsync(fullKey));
         }
 
         /// <inheritdoc />
-        public override UpdateItemResult<TCacheValue> Update(string key, Func<TCacheValue, TCacheValue> updateValue, int maxRetries)
-            => Update(key, null, updateValue, maxRetries);
+        public override Task<UpdateItemResult<TCacheValue>> UpdateAsync(string key, Func<TCacheValue, Task<TCacheValue>> updateValue, int maxRetries)
+            => UpdateAsync(key, null, updateValue, maxRetries);
 
         /// <inheritdoc />
-        public override UpdateItemResult<TCacheValue> Update(string key, string region, Func<TCacheValue, TCacheValue> updateValue, int maxRetries)
+        public override Task<UpdateItemResult<TCacheValue>> UpdateAsync(string key, string region, Func<TCacheValue, Task<TCacheValue>> updateValue, int maxRetries)
         {
             if (!_isLuaAllowed)
             {
-                return UpdateNoScript(key, region, updateValue, maxRetries);
+                return UpdateNoScriptAsync(key, region, updateValue, maxRetries);
             }
 
             var tries = 0;
             var fullKey = GetKey(key, region);
 
-            return Retry(() =>
+            return RetryAsync(async () =>
             {
                 do
                 {
                     tries++;
 
-                    var item = GetCacheItemAndVersion(key, region, out int version);
+                    var item = await GetCacheItemAndVersionAsync(key, region, out int version);
 
                     if (item == null)
                     {
@@ -300,7 +300,7 @@ return result";
                     ValidateExpirationTimeout(item);
 
                     // run update
-                    var newValue = updateValue(item.Value);
+                    var newValue = await updateValue(item.Value);
 
                     // added null check, throw explicit to me more consistent. Otherwise it would throw within the script exec
                     if (newValue == null)
@@ -309,7 +309,7 @@ return result";
                     }
 
                     // resetting TTL on update, too
-                    var result = Eval(ScriptType.Update, fullKey, new[]
+                    var result = await EvalAsync(ScriptType.Update, fullKey, new[]
                     {
                         ToRedisValue(newValue),
                         version,
@@ -337,19 +337,19 @@ return result";
 #pragma warning disable SA1600
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
 
-        protected UpdateItemResult<TCacheValue> UpdateNoScript(string key, string region, Func<TCacheValue, TCacheValue> updateValue, int maxRetries)
+        protected Task<UpdateItemResult<TCacheValue>> UpdateNoScriptAsync(string key, string region, Func<TCacheValue, Task<TCacheValue>> updateValue, int maxRetries)
         {
             var committed = false;
             var tries = 0;
             var fullKey = GetKey(key, region);
 
-            return Retry(() =>
+            return RetryAsync(async () =>
             {
                 do
                 {
                     tries++;
 
-                    var item = GetCacheItemInternal(key, region);
+                    var item = await GetCacheItemInternalAsync(key, region);
 
                     if (item == null)
                     {
@@ -360,11 +360,11 @@ return result";
 
                     var oldValue = ToRedisValue(item.Value);
 
-                    var tran = _connection.Database.CreateTransaction();
+                    var tran = (await _connection.DatabaseAsync()).CreateTransaction();
                     tran.AddCondition(Condition.HashEqual(fullKey, HashFieldValue, oldValue));
 
                     // run update
-                    var newValue = updateValue(item.Value);
+                    var newValue = await updateValue(item.Value);
 
                     // added null check, throw explicit to me more consistent. Otherwise it would throw later
                     if (newValue == null)
@@ -372,9 +372,9 @@ return result";
                         return UpdateItemResult.ForFactoryReturnedNull<TCacheValue>();
                     }
 
-                    tran.HashSetAsync(fullKey, HashFieldValue, ToRedisValue(newValue));
+                    await tran.HashSetAsync(fullKey, HashFieldValue, ToRedisValue(newValue));
 
-                    committed = tran.Execute();
+                    committed = await tran.ExecuteAsync();
 
                     if (committed)
                     {
@@ -383,7 +383,7 @@ return result";
 
                         if (newItem.ExpirationMode == ExpirationMode.Sliding && newItem.ExpirationTimeout != TimeSpan.Zero)
                         {
-                            _connection.Database.KeyExpire(fullKey, newItem.ExpirationTimeout, CommandFlags.FireAndForget);
+                            await (await _connection.DatabaseAsync()).KeyExpireAsync(fullKey, newItem.ExpirationTimeout, CommandFlags.FireAndForget);
                         }
 
                         return UpdateItemResult.ForSuccess(newItem, tries > 1, tries);
@@ -412,8 +412,8 @@ return result";
         /// <returns>
         /// <c>true</c> if the key was not already added to the cache, <c>false</c> otherwise.
         /// </returns>
-        protected override bool AddInternalPrepared(CacheItem<TCacheValue> item) =>
-            Retry(() => Set(item, When.NotExists, true));
+        protected override Task<bool> AddInternalPreparedAsync(CacheItem<TCacheValue> item) =>
+            RetryAsync(() => SetAsync(item, When.NotExists, true));
 
         /// <summary>
         /// Performs application-defined tasks associated with freeing, releasing, or resetting
@@ -434,8 +434,8 @@ return result";
         /// </summary>
         /// <param name="key">The key being used to identify the item within the cache.</param>
         /// <returns>The <c>CacheItem</c>.</returns>
-        protected override CacheItem<TCacheValue> GetCacheItemInternal(string key)
-            => GetCacheItemInternal(key, null);
+        protected override Task<CacheItem<TCacheValue>> GetCacheItemInternalAsync(string key)
+            => GetCacheItemInternalAsync(key, null);
 
         /// <summary>
         /// Gets a <c>CacheItem</c> for the specified key.
@@ -443,102 +443,193 @@ return result";
         /// <param name="key">The key being used to identify the item within the cache.</param>
         /// <param name="region">The cache region.</param>
         /// <returns>The <c>CacheItem</c>.</returns>
-        protected override CacheItem<TCacheValue> GetCacheItemInternal(string key, string region)
+        protected override Task<CacheItem<TCacheValue>> GetCacheItemInternalAsync(string key, string region)
         {
-            return GetCacheItemAndVersion(key, region, out int version);
+            return GetCacheItemAndVersionAsync(key, region, out int version);
         }
 
-        private CacheItem<TCacheValue> GetCacheItemAndVersion(string key, string region, out int version)
+        private Task<CacheItem<TCacheValue>> GetCacheItemAndVersionAsync(string key, string region, out int version)
         {
-            version = -1;
-            if (!_isLuaAllowed)
+            async Task<Tuple<CacheItem<TCacheValue>, int>> LocalFunc()
             {
-                return GetCacheItemInternalNoScript(key, region);
-            }
-
-            var fullKey = GetKey(key, region);
-
-            var result = Retry(() => Eval(ScriptType.Get, fullKey));
-            if (result == null || result.IsNull)
-            {
-                // something went wrong. HMGET should return at least a null result for each requested field
-                throw new InvalidOperationException("Error retrieving " + fullKey);
-            }
-
-            var values = (RedisValue[])result;
-
-            // the first item stores the value
-            var item = values[0];
-            var expirationModeItem = values[1];
-            var timeoutItem = values[2];
-            var createdItem = values[3];
-            var valueTypeItem = values[4];
-            version = (int)values[5];
-            var usesDefaultExpiration = values[6].HasValue ? (bool)values[6]        // if flag is set, all good...
-                : (expirationModeItem.HasValue && timeoutItem.HasValue) ? false     // if not, but expiration flags have values, use those
-                : true;                                                             // otherwise fall back to use default expiration from config
-
-            if (!item.HasValue || !valueTypeItem.HasValue /* partially removed? */
-                || item.IsNullOrEmpty || item.IsNull)
-            {
-                return null;
-            }
-
-            var expirationMode = ExpirationMode.None;
-            var expirationTimeout = default(TimeSpan);
-
-            // checking if the expiration mode is set on the hash
-            if (expirationModeItem.HasValue && timeoutItem.HasValue)
-            {
-                if (!timeoutItem.IsNullOrEmpty && !expirationModeItem.IsNullOrEmpty)
+                int outValue = -1;
+                if (!_isLuaAllowed)
                 {
-                    expirationMode = (ExpirationMode)(int)expirationModeItem;
-                    expirationTimeout = TimeSpan.FromMilliseconds((long)timeoutItem);
+                    return Tuple.Create(await GetCacheItemInternalNoScriptAsync(key, region), outValue);
                 }
-                else
+
+                var fullKey = GetKey(key, region);
+
+                var result = await RetryAsync(() => EvalAsync(ScriptType.Get, fullKey));
+
+                if (result == null || result.IsNull)
                 {
-                    Logger.LogWarn("Expiration mode and timeout are set but are not valid '{0}', '{1}'.", expirationModeItem, timeoutItem);
+                    // something went wrong. HMGET should return at least a null result for each requested field
+                    throw new InvalidOperationException("Error retrieving " + fullKey);
                 }
+
+                var values = (RedisValue[])result;
+
+                // the first item stores the value
+                var item = values[0];
+                var expirationModeItem = values[1];
+                var timeoutItem = values[2];
+                var createdItem = values[3];
+                var valueTypeItem = values[4];
+                outValue = (int)values[5];
+                var usesDefaultExpiration = values[6].HasValue ? (bool)values[6]        // if flag is set, all good...
+                    : (expirationModeItem.HasValue && timeoutItem.HasValue) ? false     // if not, but expiration flags have values, use those
+                    : true;                                                             // otherwise fall back to use default expiration from config
+
+                if (!item.HasValue || !valueTypeItem.HasValue /* partially removed? */
+                    || item.IsNullOrEmpty || item.IsNull)
+                {
+                    return Tuple.Create((CacheItem<TCacheValue>)null, outValue);
+                }
+
+                var expirationMode = ExpirationMode.None;
+                var expirationTimeout = default(TimeSpan);
+
+                // checking if the expiration mode is set on the hash
+                if (expirationModeItem.HasValue && timeoutItem.HasValue)
+                {
+                    if (!timeoutItem.IsNullOrEmpty && !expirationModeItem.IsNullOrEmpty)
+                    {
+                        expirationMode = (ExpirationMode)(int)expirationModeItem;
+                        expirationTimeout = TimeSpan.FromMilliseconds((long)timeoutItem);
+                    }
+                    else
+                    {
+                        Logger.LogWarn("Expiration mode and timeout are set but are not valid '{0}', '{1}'.", expirationModeItem, timeoutItem);
+                    }
+                }
+
+                var value = FromRedisValue(item, (string)valueTypeItem);
+
+                var cacheItem =
+                    usesDefaultExpiration ?
+                    string.IsNullOrWhiteSpace(region) ?
+                        new CacheItem<TCacheValue>(key, value) :
+                        new CacheItem<TCacheValue>(key, region, value) :
+                    string.IsNullOrWhiteSpace(region) ?
+                        new CacheItem<TCacheValue>(key, value, expirationMode, expirationTimeout) :
+                        new CacheItem<TCacheValue>(key, region, value, expirationMode, expirationTimeout);
+
+                if (createdItem.HasValue)
+                {
+                    cacheItem = cacheItem.WithCreated(new DateTime((long)createdItem, DateTimeKind.Utc));
+                }
+
+                if (cacheItem.IsExpired)
+                {
+                    TriggerCacheSpecificRemove(key, region, CacheItemRemovedReason.Expired, cacheItem.Value);
+
+                    return Tuple.Create((CacheItem<TCacheValue>)null, outValue);
+                }
+
+                return Tuple.Create(cacheItem, outValue);
             }
 
-            var value = FromRedisValue(item, (string)valueTypeItem);
+            var task = Task.Run(LocalFunc);
+            var tuple = task.GetAwaiter().GetResult();
 
-            var cacheItem =
-                usesDefaultExpiration ?
-                string.IsNullOrWhiteSpace(region) ?
-                    new CacheItem<TCacheValue>(key, value) :
-                    new CacheItem<TCacheValue>(key, region, value) :
-                string.IsNullOrWhiteSpace(region) ?
-                    new CacheItem<TCacheValue>(key, value, expirationMode, expirationTimeout) :
-                    new CacheItem<TCacheValue>(key, region, value, expirationMode, expirationTimeout);
-
-            if (createdItem.HasValue)
-            {
-                cacheItem = cacheItem.WithCreated(new DateTime((long)createdItem, DateTimeKind.Utc));
-            }
-
-            if (cacheItem.IsExpired)
-            {
-                TriggerCacheSpecificRemove(key, region, CacheItemRemovedReason.Expired, cacheItem.Value);
-
-                return null;
-            }
-
-            return cacheItem;
+            version = tuple.Item2;
+            return Task.FromResult(tuple.Item1);
         }
+
+        #region XXX
+        //private async Task<CacheItem<TCacheValue>> GetCacheItemAndVersionAsync(string key, string region, out int version)
+        //{
+        //    version = -1;
+        //    if (!_isLuaAllowed)
+        //    {
+        //        return await GetCacheItemInternalNoScriptAsync(key, region);
+        //    }
+
+        //    var fullKey = GetKey(key, region);
+
+        //    var result = await RetryAsync(() => EvalAsync(ScriptType.Get, fullKey));
+        //    if (result == null || result.IsNull)
+        //    {
+        //        // something went wrong. HMGET should return at least a null result for each requested field
+        //        throw new InvalidOperationException("Error retrieving " + fullKey);
+        //    }
+
+        //    var values = (RedisValue[])result;
+
+        //    // the first item stores the value
+        //    var item = values[0];
+        //    var expirationModeItem = values[1];
+        //    var timeoutItem = values[2];
+        //    var createdItem = values[3];
+        //    var valueTypeItem = values[4];
+        //    version = (int)values[5];
+        //    var usesDefaultExpiration = values[6].HasValue ? (bool)values[6]        // if flag is set, all good...
+        //        : (expirationModeItem.HasValue && timeoutItem.HasValue) ? false     // if not, but expiration flags have values, use those
+        //        : true;                                                             // otherwise fall back to use default expiration from config
+
+        //    if (!item.HasValue || !valueTypeItem.HasValue /* partially removed? */
+        //        || item.IsNullOrEmpty || item.IsNull)
+        //    {
+        //        return null;
+        //    }
+
+        //    var expirationMode = ExpirationMode.None;
+        //    var expirationTimeout = default(TimeSpan);
+
+        //    // checking if the expiration mode is set on the hash
+        //    if (expirationModeItem.HasValue && timeoutItem.HasValue)
+        //    {
+        //        if (!timeoutItem.IsNullOrEmpty && !expirationModeItem.IsNullOrEmpty)
+        //        {
+        //            expirationMode = (ExpirationMode)(int)expirationModeItem;
+        //            expirationTimeout = TimeSpan.FromMilliseconds((long)timeoutItem);
+        //        }
+        //        else
+        //        {
+        //            Logger.LogWarn("Expiration mode and timeout are set but are not valid '{0}', '{1}'.", expirationModeItem, timeoutItem);
+        //        }
+        //    }
+
+        //    var value = FromRedisValue(item, (string)valueTypeItem);
+
+        //    var cacheItem =
+        //        usesDefaultExpiration ?
+        //        string.IsNullOrWhiteSpace(region) ?
+        //            new CacheItem<TCacheValue>(key, value) :
+        //            new CacheItem<TCacheValue>(key, region, value) :
+        //        string.IsNullOrWhiteSpace(region) ?
+        //            new CacheItem<TCacheValue>(key, value, expirationMode, expirationTimeout) :
+        //            new CacheItem<TCacheValue>(key, region, value, expirationMode, expirationTimeout);
+
+        //    if (createdItem.HasValue)
+        //    {
+        //        cacheItem = cacheItem.WithCreated(new DateTime((long)createdItem, DateTimeKind.Utc));
+        //    }
+
+        //    if (cacheItem.IsExpired)
+        //    {
+        //        TriggerCacheSpecificRemove(key, region, CacheItemRemovedReason.Expired, cacheItem.Value);
+
+        //        return null;
+        //    }
+
+        //    return cacheItem;
+        //}
+        #endregion
 
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
 #pragma warning disable SA1600
 
-        protected CacheItem<TCacheValue> GetCacheItemInternalNoScript(string key, string region)
+        protected Task<CacheItem<TCacheValue>> GetCacheItemInternalNoScriptAsync(string key, string region)
         {
-            return Retry(() =>
+            return RetryAsync(async () =>
             {
                 var fullKey = GetKey(key, region);
 
                 // getting both, the value and, if exists, the expiration mode. if that one is set
                 // and it is sliding, we also retrieve the timeout later
-                var values = _connection.Database.HashGet(
+                var values = await (await _connection.DatabaseAsync()).HashGetAsync(
                     fullKey,
                     new RedisValue[]
                     {
@@ -610,7 +701,7 @@ return result";
                 // update sliding
                 if (expirationMode == ExpirationMode.Sliding && expirationTimeout != default(TimeSpan))
                 {
-                    _connection.Database.KeyExpire(fullKey, cacheItem.ExpirationTimeout, CommandFlags.FireAndForget);
+                    await (await _connection.DatabaseAsync()).KeyExpireAsync(fullKey, cacheItem.ExpirationTimeout, CommandFlags.FireAndForget);
                 }
 
                 return cacheItem;
@@ -625,16 +716,16 @@ return result";
         /// with the new value. If the item doesn't exist, the item will be added to the cache.
         /// </summary>
         /// <param name="item">The <c>CacheItem</c> to be added to the cache.</param>
-        protected override void PutInternal(CacheItem<TCacheValue> item)
-            => base.PutInternal(item);
+        protected override Task PutInternalAsync(CacheItem<TCacheValue> item)
+            => base.PutInternalAsync(item);
 
         /// <summary>
         /// Puts the <paramref name="item"/> into the cache. If the item exists it will get updated
         /// with the new value. If the item doesn't exist, the item will be added to the cache.
         /// </summary>
         /// <param name="item">The <c>CacheItem</c> to be added to the cache.</param>
-        protected override void PutInternalPrepared(CacheItem<TCacheValue> item) =>
-            Retry(() => Set(item, When.Always, false));
+        protected override Task PutInternalPreparedAsync(CacheItem<TCacheValue> item) =>
+            RetryAsync(() => SetAsync(item, When.Always, false));
 
         /// <summary>
         /// Removes a value from the cache for the specified key.
@@ -643,7 +734,7 @@ return result";
         /// <returns>
         /// <c>true</c> if the key was found and removed from the cache, <c>false</c> otherwise.
         /// </returns>
-        protected override bool RemoveInternal(string key) => RemoveInternal(key, null);
+        protected override Task<bool> RemoveInternalAsync(string key) => RemoveInternalAsync(key, null);
 
 #pragma warning disable CSE0003
 
@@ -655,28 +746,28 @@ return result";
         /// <returns>
         /// <c>true</c> if the key was found and removed from the cache, <c>false</c> otherwise.
         /// </returns>
-        protected override bool RemoveInternal(string key, string region)
+        protected override Task<bool> RemoveInternalAsync(string key, string region)
         {
-            return Retry(() =>
+            return RetryAsync(async () =>
             {
                 var fullKey = GetKey(key, region);
 
                 // clean up region
                 if (!string.IsNullOrWhiteSpace(region))
                 {
-                    _connection.Database.HashDelete(region, fullKey, CommandFlags.FireAndForget);
+                    await (await _connection.DatabaseAsync()).HashDeleteAsync(region, fullKey, CommandFlags.FireAndForget);
                 }
 
                 // remove key
-                var result = _connection.Database.KeyDelete(fullKey);
+                var result = await (await _connection.DatabaseAsync()).KeyDeleteAsync(fullKey);
 
                 return result;
             });
         }
 
-        private void SubscribeKeyspaceNotifications()
+        private async Task SubscribeKeyspaceNotificationsAsync()
         {
-            _connection.Subscriber.Subscribe(
+            await (await _connection.SubscriberAsync()).SubscribeAsync(
                  $"__keyevent@{_redisConfiguration.Database}__:expired",
                  (channel, key) =>
                  {
@@ -690,7 +781,7 @@ return result";
                      TriggerCacheSpecificRemove(tupple.Item1, tupple.Item2, CacheItemRemovedReason.Expired, null);
                  });
 
-            _connection.Subscriber.Subscribe(
+            await (await _connection.SubscriberAsync()).SubscribeAsync(
                 $"__keyevent@{_redisConfiguration.Database}__:evicted",
                 (channel, key) =>
                 {
@@ -704,7 +795,7 @@ return result";
                     TriggerCacheSpecificRemove(tupple.Item1, tupple.Item2, CacheItemRemovedReason.Evicted, null);
                 });
 
-            _connection.Subscriber.Subscribe(
+            await (await _connection.SubscriberAsync()).SubscribeAsync(
                 $"__keyevent@{_redisConfiguration.Database}__:del",
                 (channel, key) =>
                 {
@@ -818,22 +909,22 @@ return result";
             return _valueConverter.ToRedisValue(value);
         }
 
-        private T Retry<T>(Func<T> retryme) =>
-            RetryHelper.Retry(retryme, _managerConfiguration.RetryTimeout, _managerConfiguration.MaxRetries, Logger);
+        private Task<T> RetryAsync<T>(Func<Task<T>> retryme) =>
+            RetryHelper.RetryAsync(retryme, _managerConfiguration.RetryTimeout, _managerConfiguration.MaxRetries, Logger);
 
-        private void Retry(Action retryme)
-            => Retry(
-                () =>
+        private Task RetryAsync(Func<Task> retryme)
+            => RetryAsync(
+                async () =>
                 {
-                    retryme();
+                    await retryme();
                     return true;
                 });
 
-        private bool Set(CacheItem<TCacheValue> item, When when, bool sync = false)
+        private async Task<bool> SetAsync(CacheItem<TCacheValue> item, When when, bool sync = false)
         {
             if (!_isLuaAllowed)
             {
-                return SetNoScript(item, when, sync);
+                return await SetNoScriptAsync(item, when, sync);
             }
 
             var fullKey = GetKey(item.Key, item.Region);
@@ -857,11 +948,11 @@ return result";
             RedisResult result;
             if (when == When.NotExists)
             {
-                result = Eval(ScriptType.Add, fullKey, parameters, flags);
+                result = await EvalAsync(ScriptType.Add, fullKey, parameters, flags);
             }
             else
             {
-                result = Eval(ScriptType.Put, fullKey, parameters, flags);
+                result = await EvalAsync(ScriptType.Put, fullKey, parameters, flags);
             }
 
             if (result == null)
@@ -871,7 +962,7 @@ return result";
                     if (!string.IsNullOrWhiteSpace(item.Region))
                     {
                         // setting region lookup key if region is being used
-                        _connection.Database.HashSet(item.Region, fullKey, "regionKey", When.Always, CommandFlags.FireAndForget);
+                        await (await _connection.DatabaseAsync()).HashSetAsync(item.Region, fullKey, "regionKey", When.Always, CommandFlags.FireAndForget);
                     }
 
                     // put runs via fire and forget, so we don't get a result back
@@ -888,7 +979,7 @@ return result";
                     // add failed because element exists already
                     if (Logger.IsEnabled(LogLevel.Debug))
                     {
-                        Logger.LogDebug("DB {0} | Failed to add item [{1}] because it exists.", _connection.Database.Database, item.ToString());
+                        Logger.LogDebug("DB {0} | Failed to add item [{1}] because it exists.", (await _connection.DatabaseAsync()).Database, item.ToString());
                     }
 
                     return false;
@@ -903,20 +994,20 @@ return result";
                     {
                         // setting region lookup key if region is being used
                         // we cannot do that within the lua because the region could be on another cluster node!
-                        _connection.Database.HashSet(item.Region, fullKey, "regionKey", When.Always, CommandFlags.FireAndForget);
+                        await (await _connection.DatabaseAsync()).HashSetAsync(item.Region, fullKey, "regionKey", When.Always, CommandFlags.FireAndForget);
                     }
 
                     return true;
                 }
 
-                Logger.LogWarn("DB {0} | Failed to set item [{1}]: {2}.", _connection.Database.Database, item.ToString(), resultValue.ToString());
+                Logger.LogWarn("DB {0} | Failed to set item [{1}]: {2}.", (await _connection.DatabaseAsync()).Database, item.ToString(), resultValue.ToString());
                 return false;
             }
         }
 
-        private bool SetNoScript(CacheItem<TCacheValue> item, When when, bool sync = false)
+        private Task<bool> SetNoScriptAsync(CacheItem<TCacheValue> item, When when, bool sync = false)
         {
-            return Retry(() =>
+            return RetryAsync(async () =>
             {
                 var fullKey = GetKey(item.Key, item.Region);
                 var value = ToRedisValue(item.Value);
@@ -934,7 +1025,7 @@ return result";
 
                 var flags = sync ? CommandFlags.None : CommandFlags.FireAndForget;
 
-                var setResult = _connection.Database.HashSet(fullKey, HashFieldValue, value, when, flags);
+                var setResult = await (await _connection.DatabaseAsync()).HashSetAsync(fullKey, HashFieldValue, value, when, flags);
 
                 // setResult from fire and forget is alwys false, so we have to assume it works...
                 setResult = flags == CommandFlags.FireAndForget ? true : setResult;
@@ -944,7 +1035,7 @@ return result";
                     if (!string.IsNullOrWhiteSpace(item.Region))
                     {
                         // setting region lookup key if region is being used
-                        _connection.Database.HashSet(item.Region, fullKey, "regionKey", When.Always, CommandFlags.FireAndForget);
+                        await (await _connection.DatabaseAsync()).HashSetAsync(item.Region, fullKey, "regionKey", When.Always, CommandFlags.FireAndForget);
                     }
 
                     // set the additional fields in case sliding expiration should be used in this
@@ -952,17 +1043,17 @@ return result";
                     // that we can extend the expiration period every time we do a get
                     if (metaValues != null)
                     {
-                        _connection.Database.HashSet(fullKey, metaValues, flags);
+                        await (await _connection.DatabaseAsync()).HashSetAsync(fullKey, metaValues, flags);
                     }
 
                     if (item.ExpirationMode != ExpirationMode.None && item.ExpirationMode != ExpirationMode.Default)
                     {
-                        _connection.Database.KeyExpire(fullKey, item.ExpirationTimeout, CommandFlags.FireAndForget);
+                        await (await _connection.DatabaseAsync()).KeyExpireAsync(fullKey, item.ExpirationTimeout, CommandFlags.FireAndForget);
                     }
                     else
                     {
                         // bugfix #9
-                        _connection.Database.KeyPersist(fullKey, CommandFlags.FireAndForget);
+                        await (await _connection.DatabaseAsync()).KeyPersistAsync(fullKey, CommandFlags.FireAndForget);
                     }
                 }
 
@@ -970,15 +1061,15 @@ return result";
             });
         }
 
-        private RedisResult Eval(ScriptType scriptType, RedisKey redisKey, RedisValue[] values = null, CommandFlags flags = CommandFlags.None)
+        private async Task<RedisResult> EvalAsync(ScriptType scriptType, RedisKey redisKey, RedisValue[] values = null, CommandFlags flags = CommandFlags.None)
         {
             if (!_scriptsLoaded)
             {
-                lock (_lockObject)
+                using (await _evalAsyncLock.LockAsync())
                 {
                     if (!_scriptsLoaded)
                     {
-                        LoadScripts();
+                        await LoadScriptsAsync();
                         _scriptsLoaded = true;
                     }
                 }
@@ -997,26 +1088,26 @@ return result";
             {
                 if (_canPreloadScripts && script != null)
                 {
-                    return _connection.Database.ScriptEvaluate(script.Hash, new[] { redisKey }, values, flags);
+                    return await (await _connection.DatabaseAsync()).ScriptEvaluateAsync(script.Hash, new[] { redisKey }, values, flags);
                 }
                 else
                 {
-                    return _connection.Database.ScriptEvaluate(luaScript.ExecutableScript, new[] { redisKey }, values, flags);
+                    return await (await _connection.DatabaseAsync()).ScriptEvaluateAsync(luaScript.ExecutableScript, new[] { redisKey }, values, flags);
                 }
             }
             catch (RedisServerException ex) when (ex.Message.StartsWith("NOSCRIPT", StringComparison.OrdinalIgnoreCase))
             {
                 Logger.LogInfo("Received NOSCRIPT from server. Reloading scripts...");
-                LoadScripts();
+                await LoadScriptsAsync();
 
                 // retry
                 throw;
             }
         }
 
-        private void LoadScripts()
+        private async Task LoadScriptsAsync()
         {
-            lock (_lockObject)
+            using (await _loadScriptsAsyncLock.LockAsync())
             {
                 Logger.LogInfo("Loading scripts.");
 
@@ -1035,7 +1126,7 @@ return result";
                 {
                     try
                     {
-                        foreach (var server in Servers)
+                        foreach (var server in await ServersAsync())
                         {
                             if (server.IsConnected)
                             {

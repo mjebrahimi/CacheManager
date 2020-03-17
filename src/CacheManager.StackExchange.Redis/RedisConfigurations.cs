@@ -19,6 +19,7 @@ namespace CacheManager.Redis
     {
         private static Dictionary<string, RedisConfiguration> _config = null;
         private static object _configLock = new object();
+        //private static readonly AsyncLock _asyncLock = new AsyncLock();
 
         private static Dictionary<string, RedisConfiguration> Configurations
         {

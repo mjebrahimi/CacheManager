@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using CacheManager.Core;
 using CacheManager.Core.Internal;
 using CacheManager.Core.Logging;
+using CacheManager.Core.Utility;
 using StackExchange.Redis;
 using static CacheManager.Core.Utility.Guard;
 
@@ -34,7 +35,7 @@ namespace CacheManager.Redis
         private readonly RedisConnectionManager _connection;
         private readonly Timer _timer;
         private HashSet<BackplaneMessage> _messages = new HashSet<BackplaneMessage>();
-        private object _messageLock = new object();
+        private readonly AsyncLock _asyncLock = new AsyncLock();
         private int _skippedMessages = 0;
         private bool _sending = false;
         private CancellationTokenSource _source = new CancellationTokenSource();
@@ -60,7 +61,7 @@ namespace CacheManager.Redis
                 cfg,
                 loggerFactory);
 
-            RetryHelper.Retry(() => Subscribe(), configuration.RetryTimeout, configuration.MaxRetries, _logger);
+            RetryHelper.RetryAsync(() => SubscribeAsync(), configuration.RetryTimeout, configuration.MaxRetries, _logger);
 
             // adding additional timer based send message invoke (shouldn't do anything if there are no messages,
             // but in really rare race conditions, it might happen messages do not get send if SendMEssages only get invoked through "NotifyXyz"
@@ -138,7 +139,7 @@ namespace CacheManager.Redis
                 try
                 {
                     _source.Cancel();
-                    _connection.Subscriber.Unsubscribe(_channelName);
+                    _connection.SubscriberAsync().GetAwaiter().GetResult().UnsubscribeAsync(_channelName).GetAwaiter().GetResult();
                     _timer.Dispose();
                 }
                 catch
@@ -149,14 +150,14 @@ namespace CacheManager.Redis
             base.Dispose(managed);
         }
 
-        private void Publish(byte[] message)
+        private async Task PublishAsync(byte[] message)
         {
-            _connection.Subscriber.Publish(_channelName, message);
+            await (await _connection.SubscriberAsync()).PublishAsync(_channelName, message);
         }
 
         private void PublishMessage(BackplaneMessage message)
         {
-            lock (_messageLock)
+            using (_asyncLock.Lock())
             {
                 if (message.Action == BackplaneAction.Clear)
                 {
@@ -210,7 +211,7 @@ namespace CacheManager.Redis
                     await Task.Delay(10).ConfigureAwait(false);
 #endif
                     byte[] msgs = null;
-                    lock (_messageLock)
+                    using (await _asyncLock.LockAsync())
                     {
                         if (_messages != null && _messages.Count > 0)
                         {
@@ -225,7 +226,7 @@ namespace CacheManager.Redis
                             {
                                 if (msgs != null)
                                 {
-                                    Publish(msgs);
+                                    await PublishAsync(msgs);
                                     Interlocked.Increment(ref SentChunks);
                                     Interlocked.Add(ref MessagesSent, _messages.Count);
                                     _skippedMessages = 0;
@@ -262,9 +263,9 @@ namespace CacheManager.Redis
 #endif
         }
 
-        private void Subscribe()
+        private async Task SubscribeAsync()
         {
-            _connection.Subscriber.Subscribe(
+            await (await _connection.SubscriberAsync()).SubscribeAsync(
                 _channelName,
                 (channel, msg) =>
                 {

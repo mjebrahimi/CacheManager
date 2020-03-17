@@ -16,7 +16,7 @@ namespace CacheManager.Redis
     {
         private string _connectionString;
         private ConfigurationOptions _configurationOptions;
-
+        
         /// <summary>
         /// Initializes a new instance of the <see cref="RedisConfiguration"/> class.
         /// </summary>

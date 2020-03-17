@@ -1,0 +1,9 @@
+Code comment (parameters and return)
+AsyncLock check
+CuncurrentDictionary instead Dictionary
+Code Cleanup
+ConfigureAwait
+GetAwaiter().GetResault() instead .Wait()
+Task.FromResult()
+Seprate file with .Async.cs postfix
+lock check static or not

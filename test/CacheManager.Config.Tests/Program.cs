@@ -68,7 +68,7 @@ namespace CacheManager.Config.Tests
 #endif
 
                 var cacheA = new BaseCacheManager<string>(builder.Build());
-                cacheA.Clear();
+                cacheA.ClearAsync();
 
                 for (var i = 0; i < iterations; i++)
                 {

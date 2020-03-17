@@ -4,16 +4,20 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
 using CacheManager.Core.Logging;
+using CacheManager.Core.Utility;
 using StackExchange.Redis;
 using static CacheManager.Core.Utility.Guard;
 
 namespace CacheManager.Redis
 {
-    internal class RedisConnectionManager
+#pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
+    public class RedisConnectionManager
     {
         private static IDictionary<string, IConnectionMultiplexer> _connections = new Dictionary<string, IConnectionMultiplexer>();
-        private static object _connectLock = new object();
+        private static readonly AsyncLock _asyncLock = new AsyncLock();
 
         private readonly ILogger _logger;
         private readonly string _connectionString;
@@ -31,55 +35,52 @@ namespace CacheManager.Redis
             _logger = loggerFactory.CreateLogger(this);
         }
 
-        public IEnumerable<IServer> Servers
+        public async Task<IEnumerable<IServer>> ServersAsync()
         {
-            get
+            var servers = new List<IServer>();
+            var endpoints = (await ConnectAsync()).GetEndPoints();
+            foreach (var endpoint in endpoints)
             {
-                var endpoints = Connect().GetEndPoints();
-                foreach (var endpoint in endpoints)
-                {
-                    var server = Connect().GetServer(endpoint);
-                    yield return server;
-                }
+                var server = (await ConnectAsync()).GetServer(endpoint);
+                servers.Add(server);
             }
+            return servers;
         }
 
-        public IDatabase Database => Connect().GetDatabase(_configuration.Database);
+        public async Task<IDatabase> DatabaseAsync() => (await ConnectAsync()).GetDatabase(_configuration.Database);
 
-        public ISubscriber Subscriber => Connect().GetSubscriber();
+        public async Task<ISubscriber> SubscriberAsync() => (await ConnectAsync()).GetSubscriber();
 
-        public RedisFeatures Features
+        public async Task<RedisFeatures> FeaturesAsync()
         {
-            get
+            // new: if strict mode enabled, return the feature set supported by that version.
+            if (!string.IsNullOrEmpty(_configuration.StrictCompatibilityModeVersion))
             {
-                // new: if strict mode enabled, return the feature set supported by that version.
-                if (!string.IsNullOrEmpty(_configuration.StrictCompatibilityModeVersion))
-                {
-                    return new RedisFeatures(Version.Parse(_configuration.StrictCompatibilityModeVersion));
-                }
-
-                if (_configuration.TwemproxyEnabled)
-                {
-                    // server features are not available, returning a default version...
-                    return new RedisFeatures(Version.Parse("3.0"));
-                }
-
-                var server = Servers.FirstOrDefault(p => p.IsConnected);
-                if (server == null)
-                {
-                    throw new InvalidOperationException("No servers are connected or configured.");
-                }
-
-                return server.Features;
+                return new RedisFeatures(Version.Parse(_configuration.StrictCompatibilityModeVersion));
             }
+
+            if (_configuration.TwemproxyEnabled)
+            {
+                // server features are not available, returning a default version...
+                return new RedisFeatures(Version.Parse("3.0"));
+            }
+
+            var server = (await ServersAsync()).FirstOrDefault(p => p.IsConnected);
+            if (server == null)
+            {
+                throw new InvalidOperationException("No servers are connected or configured.");
+            }
+
+            return server.Features;
         }
 
-        public Dictionary<System.Net.EndPoint, string> GetConfiguration(string key)
+        public async Task<Dictionary<System.Net.EndPoint, string>> GetConfigurationAsync(string key)
         {
             var result = new Dictionary<System.Net.EndPoint, string>();
-            foreach (var server in Servers)
+            var servers = await ServersAsync();
+            foreach (var server in servers)
             {
-                var values = server.ConfigGet(key).ToDictionary(k => k.Key, v => v.Value);
+                var values = (await server.ConfigGetAsync(key)).ToDictionary(k => k.Key, v => v.Value);
 
                 if (values.ContainsKey(key))
                 {
@@ -91,13 +92,14 @@ namespace CacheManager.Redis
             return result;
         }
 
-        public void SetConfigurationAllServers(string key, string value, bool addValue)
+        public async Task SetConfigurationAllServersAsync(string key, string value, bool addValue)
         {
             try
             {
-                foreach (var server in Servers)
+                var servers = await ServersAsync();
+                foreach (var server in servers)
                 {
-                    var values = server.ConfigGet(key).ToDictionary(k => k.Key, v => v.Value);
+                    var values = (await server.ConfigGetAsync(key)).ToDictionary(k => k.Key, v => v.Value);
 
                     if (values.ContainsKey(key))
                     {
@@ -105,7 +107,7 @@ namespace CacheManager.Redis
 
                         if (!oldValue.Equals(value))
                         {
-                            server.ConfigSet(key, addValue ? oldValue + value : value);
+                            await server.ConfigSetAsync(key, addValue ? oldValue + value : value);
                         }
                     }
                 }
@@ -118,7 +120,7 @@ namespace CacheManager.Redis
 
         public static void AddConnection(string connectionString, IConnectionMultiplexer connection)
         {
-            lock (_connectLock)
+            using (_asyncLock.Lock())
             {
                 if (!_connections.ContainsKey(connectionString))
                 {
@@ -129,7 +131,7 @@ namespace CacheManager.Redis
 
         public static void RemoveConnection(string connectionString)
         {
-            lock (_connectLock)
+            using (_asyncLock.Lock())
             {
                 if (_connections.ContainsKey(connectionString))
                 {
@@ -139,12 +141,12 @@ namespace CacheManager.Redis
         }
 
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Reliability", "CA2000:Dispose objects before losing scope", Justification = "nope")]
-        public IConnectionMultiplexer Connect()
+        public async Task<IConnectionMultiplexer> ConnectAsync()
         {
             IConnectionMultiplexer connection;
             if (!_connections.TryGetValue(_connectionString, out connection))
             {
-                lock (_connectLock)
+                using (_asyncLock.Lock())
                 {
                     if (!_connections.TryGetValue(_connectionString, out connection))
                     {
@@ -153,7 +155,7 @@ namespace CacheManager.Redis
                             _logger.LogInfo("Trying to connect with the following configuration: '{0}'", RemoveCredentials(_connectionString));
                         }
 
-                        connection = ConnectionMultiplexer.Connect(_connectionString, new LogWriter(_logger));
+                        connection = await ConnectionMultiplexer.ConnectAsync(_connectionString, new LogWriter(_logger));
 
                         if (!connection.IsConnected)
                         {
@@ -175,7 +177,7 @@ namespace CacheManager.Redis
                                 throw new InvalidOperationException("No writeable endpoint found.");
                             }
                         }
-
+                        
                         _connections.Add(_connectionString, connection);
                     }
                 }
@@ -228,4 +230,5 @@ namespace CacheManager.Redis
             }
         }
     }
+#pragma warning restore CS1591 // Missing XML comment for publicly visible type or member
 }

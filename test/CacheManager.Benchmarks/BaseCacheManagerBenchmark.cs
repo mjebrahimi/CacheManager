@@ -49,11 +49,11 @@ namespace CacheManager.Benchmarks
         [GlobalSetup]
         public void Setup()
         {
-            DictionaryCache.Clear();
-            RuntimeCache.Clear();
-            RedisCache.Clear();
-            MsMemoryCache.Clear();
-            MemcachedCache.Clear();
+            DictionaryCache.ClearAsync();
+            RuntimeCache.ClearAsync();
+            RedisCache.ClearAsync();
+            MsMemoryCache.ClearAsync();
+            MemcachedCache.ClearAsync();
             SetupBench();
         }
 
@@ -103,9 +103,9 @@ namespace CacheManager.Benchmarks
 
         protected override void Excecute(ICacheManager<string> cache)
         {
-            if (!cache.Add(_key, "value"))
+            if (!cache.AddAsync(_key, "value"))
             {
-                cache.Remove(_key);
+                cache.RemoveAsync(_key);
             }
         }
     }
@@ -117,9 +117,9 @@ namespace CacheManager.Benchmarks
 
         protected override void Excecute(ICacheManager<string> cache)
         {
-            if (!cache.Add(_key, "value", "region"))
+            if (!cache.AddAsync(_key, "value", "region"))
             {
-                cache.Remove(_key);
+                cache.RemoveAsync(_key);
             }
         }
     }
@@ -135,7 +135,7 @@ namespace CacheManager.Benchmarks
 
         protected override void Excecute(ICacheManager<string> cache)
         {
-            cache.Put(_key, "value");
+            cache.PutAsync(_key, "value");
         }
     }
 
@@ -146,7 +146,7 @@ namespace CacheManager.Benchmarks
 
         protected override void Excecute(ICacheManager<string> cache)
         {
-            cache.Put(_key, "value", "region");
+            cache.PutAsync(_key, "value", "region");
         }
     }
 
@@ -161,7 +161,7 @@ namespace CacheManager.Benchmarks
 
         protected override void Excecute(ICacheManager<string> cache)
         {
-            var val = cache.Get(Key);
+            var val = cache.GetAsync(Key);
             if (val == null)
             {
                 throw new InvalidOperationException();
@@ -172,16 +172,16 @@ namespace CacheManager.Benchmarks
         {
             base.SetupBench();
 
-            DictionaryCache.Add(Key, Key);
-            DictionaryCache.Add(Key, Key, "region");
-            RuntimeCache.Add(Key, Key);
-            RuntimeCache.Add(Key, Key, "region");
-            MsMemoryCache.Add(Key, Key);
-            MsMemoryCache.Add(Key, Key, "region");
-            MemcachedCache.Add(Key, Key);
-            MemcachedCache.Add(Key, Key, "region");
-            RedisCache.Add(Key, Key);
-            RedisCache.Add(Key, Key, "region");
+            DictionaryCache.AddAsync(Key, Key);
+            DictionaryCache.AddAsync(Key, Key, "region");
+            RuntimeCache.AddAsync(Key, Key);
+            RuntimeCache.AddAsync(Key, Key, "region");
+            MsMemoryCache.AddAsync(Key, Key);
+            MsMemoryCache.AddAsync(Key, Key, "region");
+            MemcachedCache.AddAsync(Key, Key);
+            MemcachedCache.AddAsync(Key, Key, "region");
+            RedisCache.AddAsync(Key, Key);
+            RedisCache.AddAsync(Key, Key, "region");
         }
     }
 
@@ -190,7 +190,7 @@ namespace CacheManager.Benchmarks
     {
         protected override void Excecute(ICacheManager<string> cache)
         {
-            var val = cache.Get(Key, "region");
+            var val = cache.GetAsync(Key, "region");
             if (val == null)
             {
                 throw new InvalidOperationException();

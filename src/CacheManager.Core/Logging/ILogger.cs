@@ -31,7 +31,7 @@ namespace CacheManager.Core.Logging
         IDisposable BeginScope(object state);
     }
 
-    internal class NullLogger : ILogger
+    public class NullLogger : ILogger
     {
         public IDisposable BeginScope(object state) => null;
 
